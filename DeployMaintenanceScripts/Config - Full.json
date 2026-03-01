@@ -1,6 +1,6 @@
 {
     "ScriptDirectory":"C:\\Work\\1729\\Scripts\\Powershell\\DeployMaintenanceScripts\\scripts\\",
-    "ScriptDirectory_legacy":"C:\\Work\\1729\\Scripts\\Powershell\\DeployMaintenanceScripts\\scripts_legacy\\",
+    "ScriptDirectory_legacy":"C:\\Work\\1729\\Scripts.Powershell\\DeployMaintenanceScripts\\scripts_legacy\\",
     "servers":[
         {
             "name":"MIRZAKHANI\\SQL2019"

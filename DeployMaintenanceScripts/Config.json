@@ -1,6 +1,6 @@
 {
     "ScriptSourceDirectoryBase":"C:\\Work\\Scripts.SQL\\",
-    "ScriptDirectoryBase":"C:\\Work\\1729\\Scripts\\Powershell\\DeployMaintenanceScripts\\",
+    "ScriptDirectoryBase":"C:\\Work\\1729\\Scripts.Powershell\\DeployMaintenanceScripts\\",
     "servers":[
         {
             "name":"RAMANUJAN"
