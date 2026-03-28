@@ -5,7 +5,12 @@
         {
             "name":"RAMANUJAN"
 			,"group":"local"
-            ,"sql_version":"2022"
+            ,"sql_version":"2025"
+        },
+        {
+            "name":"EPISQL2021"
+			,"group":"cesi"
+            ,"sql_version":"2019"
         },
         {
             "name":"AXBUILD"
@@ -66,16 +71,6 @@
             "name":"SVILUPPOAPP\\SQL2016"
 			,"group":"metra"
             ,"sql_version":"2016"
-        },
-        {
-            "name":"EPISQL2021"
-			,"group":"cesi"
-            ,"sql_version":"2019"
-        },
-        {
-            "name":"SRVDBDWH.sistemi.local"
-			,"group":"fs"
-            ,"sql_version":"2022"
         }
     ]
 }
