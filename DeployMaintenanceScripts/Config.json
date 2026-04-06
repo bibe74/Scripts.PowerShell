@@ -1,10 +1,15 @@
 {
-    "ScriptSourceDirectoryBase":"C:\\Work\\Scripts.SQL\\",
-    "ScriptDirectoryBase":"C:\\Work\\1729\\Scripts.Powershell\\DeployMaintenanceScripts\\",
+    "ScriptSourceDirectoryBase":"C:\\Work.Git\\Scripts.SQL\\",
+    "ScriptDirectoryBase":"C:\\Work.Git\\1729\\1729\\Scripts.Powershell\\DeployMaintenanceScripts\\",
     "servers":[
         {
             "name":"RAMANUJAN"
 			,"group":"local"
+            ,"sql_version":"2025"
+        },
+        {
+            "name":"localhost,1433"
+			,"group":"docker"
             ,"sql_version":"2025"
         },
         {
