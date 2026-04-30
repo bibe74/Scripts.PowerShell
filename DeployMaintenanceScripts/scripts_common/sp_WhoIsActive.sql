@@ -11,12 +11,14 @@ IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.ROUTINES WHERE ROUTINE_NAME = 's
 GO
 
 /*********************************************************************************************
-Who Is Active? v12.00 (2021-11-10)
-(C) 2007-2021, Adam Machanic
+Who Is Active? v2200.20260409
+(C) 2007-2026, Adam Machanic
 
 Feedback: https://github.com/amachanic/sp_whoisactive/issues
 Releases: https://github.com/amachanic/sp_whoisactive/releases
 Docs: http://whoisactive.com
+
+Compatibility: SQL Server 2022+
 
 License:
     https://github.com/amachanic/sp_whoisactive/blob/master/LICENSE
