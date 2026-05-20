@@ -22,8 +22,8 @@ DECLARE
 	, @VersionDate DATETIME = NULL
 
 SELECT
-    @Version = '2026.3.1'
-    , @VersionDate = '20260313';
+    @Version = '2026.4.1'
+    , @VersionDate = '20260420';
 
 /* Version check */
 IF @VersionCheck = 1 BEGIN
@@ -63,7 +63,7 @@ IF @Help = 1 BEGIN
     Parameters:
     @Mode   0=All discovered vulnerabilities
 			1=Only high vulnerability items will be shown
-			99=Information and all discovered vulnerabilites shown(DEFAULT)
+			99=Information and all discovered vulnerabilities shown(DEFAULT)
     
 	@CheckLocalAdmin 1=Check members of local Administrators
                      0=Do NOT check members of local Administrators(DEFAULT)
@@ -177,26 +177,16 @@ DECLARE
 
 IF OBJECT_ID('tempdb..#Results') IS NOT NULL
 	DROP TABLE #Results;
-/*
-CREATE TABLE #Results (
-	VulnerabilityLevel TINYINT
-	, Vulnerability VARCHAR(50)
-	, Issue VARCHAR(50)
-	, DatabaseName NVARCHAR(255)
-	, Details NVARCHAR(4000)
-	, ActionStep NVARCHAR(1000)
-	, ReadMoreURL XML
-	);
-*/
+
 CREATE TABLE #Results (
 	CategoryID TINYINT
 	, CheckID INT
 	, [Importance] TINYINT
 	, CheckName VARCHAR(50)
-	, Issue NVARCHAR(1000)
+	, Issue NVARCHAR(MAX)
 	, DatabaseName NVARCHAR(255)
-	, Details NVARCHAR(1000)
-	, ActionStep NVARCHAR(1000)
+	, Details NVARCHAR(MAX)
+	, ActionStep NVARCHAR(MAX)
 	, ReadMoreURL XML
 	);
 
@@ -230,7 +220,6 @@ CREATE TABLE #SQLVersions (
 INSERT #SQLVersions
 VALUES
 	('2008', 10)
-	, ('2008 R2', 10.5)
 	, ('2012', 11)
 	, ('2014', 12)
 	, ('2016', 13)
@@ -271,7 +260,7 @@ SELECT
 
 SELECT @ServerZeroName = [name]
 FROM sys.servers
-WHERE server_id = 0
+WHERE server_id = 0;
 
 SELECT @SQLServerService = service_account
 FROM sys.dm_server_services 
@@ -431,8 +420,8 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 				WHEN 1 THEN 'ENABLED.'
 				ELSE 'DISABLED.'
 				END
-		, 'We recommend ''remote admin connections'' be ENABLED as a troubleshoting option for sysadmin role members.'
-		, 'https://straightpathsql.com/check/remote-admin-connections'
+		, 'We recommend ''remote admin connections'' be ENABLED as a troubleshooting option for sysadmin role members.'
+		, 'https://straightpathsql.com/check/remote-dedicated-admin-connections'
 	FROM sys.configurations
 	WHERE [name] = 'remote admin connections';
 
@@ -459,21 +448,22 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 
 	/* check for supported versions */
 	IF SERVERPROPERTY('EngineEdition') <> 8 /* Azure Managed Instances */ BEGIN
-		IF @SQLVersionMajor < 13
+		IF @SQLVersionMajor < 13 BEGIN
 
-		INSERT #Results
-		SELECT 
-			6
-			, 602
-			, 1
-			, '*Unsupported version of SQL Server'
-			, 'This version of SQL Server is no longer supported by Microsoft.'
-			, NULL
-			, 'SQL Server ' +  VersionName + ' is no longer supported, so there will be no future security updates.'
-			, 'Upgrade to SQL Server 2016 or higher.'
-			, 'https://straightpathsql.com/check/unsupported-versions'
-		FROM #SQLVersions
-		WHERE VersionNumber = @SQLVersionMajor
+			INSERT #Results
+			SELECT 
+				6
+				, 602
+				, 1
+				, '*Unsupported version of SQL Server'
+				, 'This version of SQL Server is no longer supported by Microsoft.'
+				, NULL
+				, 'SQL Server ' +  VersionName + ' is no longer supported, so there will be no future security updates.'
+				, 'Upgrade to SQL Server 2016 or higher.'
+				, 'https://straightpathsql.com/check/unsupported-versions'
+			FROM #SQLVersions
+			WHERE VersionNumber = @SQLVersionMajor
+			END;
 		END;
 	
 
@@ -481,11 +471,11 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 	IF SERVERPROPERTY('EngineEdition') <> 8 /* Azure Managed Instances */ BEGIN
 		IF ((@SQLVersionMajor = 11 AND @SQLVersionMinor < 7507) OR
 			(@SQLVersionMajor = 12 AND @SQLVersionMinor < 6449) OR
-			(@SQLVersionMajor = 13 AND @SQLVersionMinor < 6480) OR
-			(@SQLVersionMajor = 14 AND @SQLVersionMinor < 3520) OR
-			(@SQLVersionMajor = 15 AND @SQLVersionMinor < 4460) OR
-			(@SQLVersionMajor = 16 AND @SQLVersionMinor < 4240) OR
-			(@SQLVersionMajor = 17 AND @SQLVersionMinor < 4020) )
+			(@SQLVersionMajor = 13 AND @SQLVersionMinor < 6485) OR
+			(@SQLVersionMajor = 14 AND @SQLVersionMinor < 3525) OR
+			(@SQLVersionMajor = 15 AND @SQLVersionMinor < 4465) OR
+			(@SQLVersionMajor = 16 AND @SQLVersionMinor < 4250) OR
+			(@SQLVersionMajor = 17 AND @SQLVersionMinor < 4030) )
 
 		INSERT #Results
 		SELECT 
@@ -550,9 +540,9 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 		, 'Enabled sa account'
 		, 'The sa login is enabled.' 
 		, NULL
-		, 'The sa account is enabled for connections. Hackers commonly use the [sa] account for malicious activity since it in the [sysadmin] role.'
+		, 'The sa account is enabled for connections. Hackers commonly use the [sa] account for malicious activity since it is in the [sysadmin] role.'
 		, 'Disable the sa account. Disabling only prevents sa from being used as a login for connections, as it can still own databases, jobs, etc.'
-		, 'https://straightpathsql.com/check/sa-login-enabled'
+		, 'https://straightpathsql.com/check/enabled-sa-login'
 	FROM sys.sql_logins
 	WHERE sid = 0x01
 	AND is_disabled = 0;
@@ -614,7 +604,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 			, 'The SQL Server service account is a member of the local Administrators Windows group.' 
 			, NULL
 			, 'The account [' + AccountName + '] is in the local Administrator group, so anyone with xp_cmdshell access can do anything on this server.' 
-			, 'We recommend removing the service account from the local Administrators role to adhere to the principle of least privilege.'
+			, 'We recommend removing the service account from the local Administrators group to adhere to the principle of least privilege.'
 			, 'https://straightpathsql.com/check/service-account-permissions'
 		FROM @LocalAdmin
 		WHERE AccountName = @SQLServerService;
@@ -628,7 +618,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 			, 'The SQL Agent service account is a member of the local Administrators Windows group.' 
 			, NULL
 			, 'The account [' + AccountName + '] is in the local Administrator group, so anyone with xp_cmdshell access can do anything on this server.' 
-			, 'We recommend removing the service account from the local Administrators role to adhere to the principle of least privilege.'
+			, 'We recommend removing the service account from the local Administrators group to adhere to the principle of least privilege.'
 			, 'https://straightpathsql.com/check/service-account-permissions'
 		FROM @LocalAdmin
 		WHERE AccountName = @SQLAgentService;
@@ -696,12 +686,8 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 
 
 	/* check for invalid Windows logins */
-	IF(OBJECT_ID('tempdb..#InvalidLogins') IS NOT NULL)
-		BEGIN
-		
-		EXEC sp_executesql N'DROP TABLE #InvalidLogins;';
-	
-		END;
+	IF OBJECT_ID('tempdb..#InvalidLogins') IS NOT NULL
+		DROP TABLE #InvalidLogins;
 	
 	CREATE TABLE #InvalidLogins (
 		LoginSID VARBINARY(85)
@@ -720,7 +706,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 		, 'There is a login with permissions that is no longer mapped to a valid Windows user.'
 		, NULL
 		, QUOTENAME(LoginName) + ' is an invalid Windows user or group that is mapped to a SQL Server principal.'
-		, 'Verify in the account no longer exists and carefully remove all SQL Server permissions.'
+		, 'Verify the account no longer exists and carefully remove all SQL Server permissions.'
 		, 'https://straightpathsql.com/check/invalid-windows-login'
 	FROM #InvalidLogins;
 
@@ -735,7 +721,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 		, 'A SQL Server login has a blank password.'
 		, NULL
 		, 'Login [' + name + '] has a blank password.'
-		, 'Change the password to something more secure. Logins with blank passwords are the easy to hack.'
+		, 'Change the password to something more secure. Logins with blank passwords are easy to hack.'
 		, 'https://straightpathsql.com/check/password-vulnerabilities'
 	FROM sys.sql_logins
 	WHERE PWDCOMPARE('',password_hash)=1;
@@ -837,8 +823,8 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 		, 'The "cross-database ownership chaining" configuration is enabled.'
 		, NULL
 		, 'Cross-database ownership chaining allows database owners and members of the db_ddladmin and db_owners database roles to create objects that are owned by other users.' 
-		, 'Since enabling this setting allows certain users to create objects can potentially target objects in other databases, this configuration option should be enabled only at the database level.'
-		, 'https://straightpathsql.com/check/cross-db-ownership-chaining'
+		, 'Since enabling this setting allows certain users to create objects that can potentially target objects in other databases, this configuration option should be enabled only at the database level.'
+		, 'https://straightpathsql.com/check/cross-database-ownership-chaining'
 	FROM master.sys.configurations
 	WHERE [name] = 'cross db ownership chaining'
 	AND value_in_use = 1;
@@ -871,7 +857,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 		, NULL
 		, 'Job [' + j.name + '] is owned by [' + SUSER_SNAME(j.owner_sid) + ']. If this login is disabled or not available due to Active Directory problems, the job will stop working.' 
 		, 'Verify this login is the correct owner for the job. If possible, see if the job can be owned by sa.'
-		, 'https://straightpathsql.com/check/jobs-owned-by-users'
+		, 'https://straightpathsql.com/check/sql-agent-jobs-owned-by-users'
 	FROM msdb.dbo.sysjobs j
 	WHERE j.enabled = 1
 	AND SUSER_SNAME(j.owner_sid) <> SUSER_SNAME(0x01)
@@ -884,11 +870,11 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 		, 313
 		, 2
 		, 'Stored procedure run at Startup' 
-		, 'There is a stored procedure schedule to run on startup.'
+		, 'There is a stored procedure scheduled to run on startup.'
 		, NULL
 		, 'Stored procedure [master].[' + r.SPECIFIC_SCHEMA + '].[' + r.SPECIFIC_NAME + '] runs automatically when SQL Server starts up.'
 		, 'Verify you and your team know exactly what this stored procedure is doing, because if not then it could pose a security risk.' 
-		, 'https://straightpathsql.com/check/startup-stored-procedures'
+		, 'https://straightpathsql.com/check/stored-procedures-that-run-at-startup'
 	FROM master.INFORMATION_SCHEMA.ROUTINES r
 	WHERE OBJECTPROPERTY(OBJECT_ID(ROUTINE_NAME), 'ExecIsStartup') = 1;
 
@@ -899,11 +885,11 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 		, 314
 		, 2
 		, 'SQL Agent job run at Startup' 
-		, 'There is a job schedule to run on startup.'
+		, 'There is a job scheduled to run on startup.'
 		, NULL
 		, 'Job [' + j.name + '] runs automatically when SQL Server Agent starts up.'
 		, 'Verify you and your team know exactly what this job is doing, because it could pose a security risk.' 
-		, 'https://straightpathsql.com/check/startup-jobs'
+		, 'https://straightpathsql.com/check/sql-agent-jobs-that-run-at-startup'
 	FROM msdb.dbo.sysschedules s
 	JOIN msdb.dbo.sysjobschedules js ON s.schedule_id = js.schedule_id
 	JOIN msdb.dbo.sysjobs j ON js.job_id = j.job_id
@@ -923,7 +909,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 		, db_name(d.database_id)
 		, 'The certificate ' + c.name + ' used to encrypt database ' + db_name(d.database_id) + ' has never been backed up.'
 		, 'Make a backup of your current certificate and store it in a secure location in case you need to restore this encrypted database.'
-		, 'https://straightpathsql.com/check/tde-certificate-no-backup'
+		, 'https://straightpathsql.com/check/no-recent-tde-certificate-backup'
 	FROM sys.certificates c 
 	INNER JOIN sys.dm_database_encryption_keys d 
 		ON c.thumbprint = d.encryptor_thumbprint
@@ -939,7 +925,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 		, db_name(d.database_id)
 		, 'The certificate ' + c.name + ' used to encrypt database ' + db_name(d.database_id) + ' has not been backed up since: ' + CAST(c.pvt_key_last_backup_date AS VARCHAR(100))
 		, 'Make sure you have a recent backup of your certificate in a secure location in case you need to restore your encrypted database.'
-		, 'https://straightpathsql.com/check/tde-certificate-no-backup'
+		, 'https://straightpathsql.com/check/no-recent-tde-certificate-backup'
 	FROM sys.certificates c 
 	INNER JOIN sys.dm_database_encryption_keys d 
 		ON c.thumbprint = d.encryptor_thumbprint
@@ -956,7 +942,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 		, db_name(d.database_id)
 		, 'The certificate ' + c.name + ' used to encrypt database ' + db_name(d.database_id) + ' is set to expire on: ' + CAST(c.expiry_date AS VARCHAR(100))
 		, 'Although you will still be able to backup or restore your encrypted database with an expired certificate, these should be changed regularly like passwords.'
-		, 'https://straightpathsql.com/check/tde-certificate-expiring'
+		, 'https://straightpathsql.com/check/tde-certificate-expiration-date'
 	FROM sys.certificates c 
 	INNER JOIN sys.dm_database_encryption_keys d 
 		ON c.thumbprint = d.encryptor_thumbprint;
@@ -975,7 +961,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 			, b.[database_name]
 			, ''The certificate '' + c.name + '' used to encrypt database backups for '' + b.[database_name] + '' has never been backed up.''
 			, ''Make sure you have a recent backup of your certificate in a secure location in case you need to restore encrypted database backups.''
-			, ''https://straightpathsql.com/check/database-backup-certificate-no-backup''
+			, ''https://straightpathsql.com/check/missing-database-backup-certificate-backup''
 		FROM sys.certificates c 
 		INNER JOIN msdb.dbo.backupset b
 			ON c.thumbprint = b.encryptor_thumbprint
@@ -995,7 +981,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 			, b.[database_name]
 			, ''The certificate '' + c.name + '' used to encrypt database backups for '' + b.[database_name] + '' has not been backed up since: '' + CAST(c.pvt_key_last_backup_date AS VARCHAR(100))
 			, ''Make sure you have a recent backup of your certificate in a secure location in case you need to restore encrypted database backups.''
-			, ''https://straightpathsql.com/check/database-backup-certificate-no-backup''
+			, ''https://straightpathsql.com/check/missing-database-backup-certificate-backup''
 		FROM sys.certificates c 
 		INNER JOIN msdb.dbo.backupset b
 			ON c.thumbprint = b.encryptor_thumbprint
@@ -1016,7 +1002,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 			, b.[database_name]
 			, ''The certificate '' + c.name + '' used to encrypt database '' + b.[database_name] + '' is set to expire on: '' + CAST(c.expiry_date AS VARCHAR(100))
 			, ''You will not be able to backup or restore your encrypted database backups with an expired certificate, so these should be changed regularly like passwords.''
-			, ''https://straightpathsql.com/check/database-backup-expire''
+			, ''https://straightpathsql.com/check/database-backup-certificate-expiration-date''
 		FROM sys.certificates c 
 		INNER JOIN msdb.dbo.backupset b
 			ON c.thumbprint = b.encryptor_thumbprint';
@@ -1034,7 +1020,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 		, 323
 		, 1
 		, 'Linked Server configured with sa'
-		, 'There is a linked Server configured with the sa login'
+		, 'There is a linked Server configured with the sa login.'
 		, NULL
 		, 'The linked server ' + s.name + ' connects to the source ' + s.data_source + ' (' + COALESCE(s.product, s.provider) + ') using the security context of the sa login, which allows any user to perform any action on the linked server.'
 		, 'Change the security configuration of the linked server to use a more secure context.'
@@ -1053,7 +1039,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 		, 324
 		, 2
 		, 'Linked Server configured with fixed login'
-		, 'There is a linked Server configured with a fixed login'
+		, 'There is a linked Server configured with a fixed login.'
 		, NULL
 		, 'The linked server ' + s.name + ' connects to the source ' + s.data_source + ' (' + COALESCE(s.product, s.provider) + ') using the security context of the login: [' + l.remote_name + '].'
 		, 'Check the security configuration to make sure this login is not in the sysadmin role, which would allow any user to perform any action on the linked server.'
@@ -1176,7 +1162,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 		, NULL
 		, [name] + ' is a SQL Server Audit that is currently running.'
 		, 'Verify this audit needs to be running, and if so any output files are in a secure directory.'
-		, 'https://straightpathsql.com/check/sql-server-audits'
+		, 'https://straightpathsql.com/check/sql-server-audit'
 	FROM sys.dm_server_audit_status
 	WHERE status = 1
 	AND [name] NOT LIKE '%SQLBeacon%'; /* for SQL Beacon */
@@ -1195,7 +1181,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 			, [name]
 			, 'The database ' + [name]
 				+ ' is owned by ' + SUSER_SNAME(owner_sid) 
-			, 'Verify this is the correct owner, because if this login is disabled or not available due to Active Directory problems then database accessability could be affected.'
+			, 'Verify this is the correct owner, because if this login is disabled or not available due to Active Directory problems then database accessibility could be affected.'
 			, 'https://straightpathsql.com/check/database-owner-is-not-preferred-owner'
 		FROM sys.databases
 		WHERE (((SUSER_SNAME(owner_sid) <> SUSER_SNAME(0x01)) AND (name IN (N'master', N'model', N'msdb', N'tempdb')))
@@ -1230,12 +1216,12 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 		, 305
 		, 2
 		, 'Database Owner is Unknown'  
-		, 'The database owner is unknown(blank).'
+		, 'The database owner is unknown (blank).'
 		, [name]
 		, ( 'Database name: ' + [name] + '   '
 			+ 'Owner name: ' + ISNULL(SUSER_SNAME(owner_sid),'~~ UNKNOWN ~~') ) AS Details
 		, 'Assign an owner to this database, preferably sa if possible.'
-		, 'https://straightpathsql.com/check/database-owner-blank'
+		, 'https://straightpathsql.com/check/database-owner-is-unknown'
 	FROM sys.databases
 	WHERE SUSER_SNAME(owner_sid) is NULL
 		AND source_database_id IS NULL; /* exclude snapshot databases */
@@ -1307,13 +1293,14 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 
 
 	/* Check that SQL Login Audit includes failed logins */
-	DECLARE @AuditValue int
+	DECLARE @AuditValue int = NULL;
 
-	EXEC master..xp_instance_regread 
-		@RootKey='HKEY_LOCAL_MACHINE'
-		, @Key='SOFTWARE\Microsoft\MSSQLServer\MSSQLServer'
-		, @Value_Name='AuditLevel'
-		, @Value = @AuditValue output
+	EXEC master.dbo.xp_instance_regread 
+		@rootkey = 'HKEY_LOCAL_MACHINE'
+		, @key = 'SOFTWARE\Microsoft\MSSQLServer\MSSQLServer'
+		, @value_name = 'AuditLevel'
+		, @value = @AuditValue OUTPUT
+		, @no_output = 'no_output';
 
 	IF @AuditValue < 2
 		INSERT #Results
@@ -1324,9 +1311,9 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 			, 'No audit of failed logins'
 			, 'Failed logins are not being logged.'
 			, NULL
-			, 'There current SQL Login Audit settings do not include failed logins.'
+			, 'The current SQL Login Audit settings do not include failed logins.'
 			, 'SQL Error logs should capture failed login for review, since these may indicate hacking attempts.'
-			,'https://straightpathsql.com/check/login-audit-does-not-include-failed-logins';
+			,'https://straightpathsql.com/check/sql-login-audit-does-not-include-failed-logins';
 
 
 	/* Failed logins */
@@ -1358,23 +1345,24 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 			,'https://straightpathsql.com/check/failed-logins';
 
 	/* number of error logs */
-	DECLARE @NumErrorLogs INT;
+	DECLARE @NumErrorLogs INT = NULL;
 
-	EXEC master.sys.xp_instance_regread
-		N'HKEY_LOCAL_MACHINE'
-		, N'Software\Microsoft\MSSQLServer\MSSQLServer'
-		, N'NumErrorLogs'
-		, @NumErrorLogs OUTPUT;
+	EXEC master.dbo.xp_instance_regread
+		@rootkey = N'HKEY_LOCAL_MACHINE'
+		, @key = N'Software\Microsoft\MSSQLServer\MSSQLServer'
+		, @value_name = N'NumErrorLogs'
+		, @value = @NumErrorLogs OUTPUT
+		, @no_output = 'no_output';
 
 	IF (SELECT ISNULL(@NumErrorLogs, 12)) < 12 
 
 		INSERT #Results
 		SELECT 
-			8
-			, 801
+			6
+			, 622
 			, 2
 			, 'Too few SQL Server error log files'
-			, 'The error retention log is at the default value of 6.'
+			, 'Error log retention is at the default value of 6 files.'
 			, NULL
 			, 'This instance is configured for only ' + CONVERT(VARCHAR(10), (ISNULL(@NumErrorLogs, -1))) + ' SQL Server error log files.'
 			, 'We recommend having between 12 and 52 SQL Server error log files to review for patterns of login failures or suspect IP addresses which may indicate hacking attempts.'
@@ -1462,13 +1450,14 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 
 
 	/*  Hide instance  */
-	DECLARE @HideInstance INT;
-	
-	EXEC xp_instance_regread 
-		'HKEY_LOCAL_MACHINE'
-		, 'Software\Microsoft\Microsoft SQL Server\MSSQLServer\SuperSocketNetLib'
-		, 'HideInstance'
-		, @HideInstance OUTPUT;
+	DECLARE @HideInstance INT = NULL;
+
+	EXEC master.dbo.xp_instance_regread 
+		@rootkey = 'HKEY_LOCAL_MACHINE'
+		, @key = 'Software\Microsoft\Microsoft SQL Server\MSSQLServer\SuperSocketNetLib'
+		, @value_name = 'HideInstance'
+		, @value = @HideInstance OUTPUT
+		, @no_output = 'no_output';
 
 	INSERT #Results
 	SELECT 
@@ -1491,7 +1480,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 	/*  Extended protection  */
 	DECLARE @ExtendedProtection INT;
 	
-	EXEC xp_instance_regread 
+	EXEC master.dbo.xp_instance_regread 
 		'HKEY_LOCAL_MACHINE'
 		, 'Software\Microsoft\Microsoft SQL Server\MSSQLServer\SuperSocketNetLib'
 		, 'ExtendedProtection'
@@ -1516,13 +1505,15 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 
 
 	/*  Force encryption  */
-	DECLARE @ForceEncryption INT;
-	
-	EXEC xp_instance_regread 
-		'HKEY_LOCAL_MACHINE'
-		, 'Software\Microsoft\Microsoft SQL Server\MSSQLServer\SuperSocketNetLib'
-		, 'ForceEncryption'
-		, @ForceEncryption OUTPUT;
+	DECLARE @ForceEncryption INT = NULL;
+
+	EXEC master.dbo.xp_instance_regread 
+		@rootkey = 'HKEY_LOCAL_MACHINE'
+		, @key = 'Software\Microsoft\Microsoft SQL Server\MSSQLServer\SuperSocketNetLib'
+		, @value_name = 'ForceEncryption'
+		, @value = @ForceEncryption OUTPUT
+		, @no_output = 'no_output';
+
 
 	INSERT #Results
 	SELECT 
@@ -1569,10 +1560,10 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 			, 344
 			, 2
 			, ''contained database''
-			, ''A contained database has certain security implications.''
+			, ''The database ['' + db_name(database_id) + ''] is set as CONTAINED.''
 			, db_name(database_id)
 			, ''Although by design contained databases are isolated, be aware of other security implication of any contained database.''
-			, ''Make sure you have a recent backup of your certificate in a secure location in case you need to restore encrypted database backups.''
+			, ''Verify this database needs to be contained, and review the contained database users to ensure they have appropriate permissions.''
 			, ''https://straightpathsql.com/check/contained-database''
 			FROM sys.databases
 			WHERE containment > 0;';
@@ -1612,7 +1603,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 		, db_name(database_id)
 		, 'The database ' + db_name(database_id) + ' has the TRUSTWORTHY setting enabled and is owned by a member of the sysadmin role.'
 		, 'With TRUSTWORTHY setting enabled and a sysadmin database owner, any user can execute commands as a sysadmin.'
-		, 'https://straightpathsql.com/check/trustworthy-enabled'
+		, 'https://straightpathsql.com/check/trustworthy-database'
 	FROM sys.databases
 	WHERE database_id > 4
 		AND is_trustworthy_on = 1
@@ -1643,7 +1634,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 	, DB_NAME()
 	, (''In ['' + DB_NAME() + ''], user ['' + u.name + '']  has the role ['' + g.name + ''].  This user can perform any function in this database including changing permissions for other users.'')
 	, ''Verify these elevated database permissions are required for this user.''
-	, ''https://straightpathsql.com/check/db-owner''
+	, ''https://straightpathsql.com/check/db_owner-role-members''
 	FROM (SELECT memberuid = convert(int, member_principal_id), groupuid = convert(int, role_principal_id) FROM [?].sys.database_role_members) m inner join [?].dbo.sysusers u on m.memberuid = u.uid inner join sysusers g on m.groupuid = g.uid where u.name <> ''dbo'' and g.name in (''db_owner'') OPTION (RECOMPILE);';
 
 	INSERT #Results
@@ -1731,7 +1722,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 	EXEC sp_MSforeachdb @SQL;
 
 
-	/* database owner is different from owner in master */ -- has issues with mistmatched collation
+	/* database owner is different from owner in master */ -- has issues with mismatched collation
 	SET @SQL = '
 	USE [?]
 	IF DB_Name() NOT IN (''tempdb'') BEGIN
@@ -1741,7 +1732,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 	, db_name() as [DatabaseName]
 	, ''The database owner ['' + dbprs.name COLLATE SQL_Latin1_General_CP1_CI_AS + ''] is different than the owner listed in master ['' + ssp.name COLLATE SQL_Latin1_General_CP1_CI_AS + ''].''
 	, ''Use ALTER AUTHORIZATION ON DATABASE to set the database owner to the correct login.''
-	, ''https://straightpathsql.com/check/database-owner-discrepancy''
+	, ''https://straightpathsql.com/check/database-owner-is-unknown''
 	FROM   sys.database_principals AS dbprs
 	INNER JOIN sys.databases AS dbs
 	 ON dbprs.sid != dbs.owner_sid 

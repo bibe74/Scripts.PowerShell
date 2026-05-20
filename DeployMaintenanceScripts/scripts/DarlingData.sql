@@ -1,4 +1,4 @@
--- Compile Date: 04/29/2026 21:01:51 UTC
+-- Compile Date: 05/12/2026 09:19:06 UTC
 SET ANSI_NULLS ON;
 SET ANSI_PADDING ON;
 SET ANSI_WARNINGS ON;
@@ -10308,9 +10308,12 @@ BEGIN
                                 N'.'  +
                                 vc.output_table
                             ),
-                            N'[dbo]' +
-                            '.' +
-                            QUOTENAME(vc.view_name),
+                            /* view bodies are stored unbracketed as
+                               "dbo.<view_name>" — match that form, not
+                               "[dbo].[<view_name>]", or the swap to the
+                               user's @output_schema_name silently no-ops */
+                            N'dbo.' +
+                            vc.view_name,
                             QUOTENAME(vc.output_schema) +
                             '.' +
                             QUOTENAME(vc.view_name)
@@ -10581,7 +10584,7 @@ FROM
                     varbinary(64),
                     bd.value(''(process/executionStack/frame/@sqlhandle)[1]'', ''nvarchar(260)''),
                     1
-                ) AS sqlhandle,
+                ),
             process_report = oa.c.query(''.'')
         FROM #human_events_xml_internal AS xet
         OUTER APPLY xet.human_events_xml.nodes(''//event'') AS oa(c)
@@ -15579,6 +15582,7 @@ ALTER PROCEDURE
     @get_all_databases bit = 'false', /*looks for all accessible user databases and returns combined results*/
     @include_databases nvarchar(MAX) = NULL, /*comma-separated list of databases to include (only when @get_all_databases = 1)*/
     @exclude_databases nvarchar(MAX) = NULL, /*comma-separated list of databases to exclude (only when @get_all_databases = 1)*/
+    @sort_order varchar(20) = 'default', /*controls final result ordering: default (script type first) or object (cluster rows for the same index; Key Subset disables sort under their replacement)*/
     @help bit = 'false', /*learn about the procedure and parameters*/
     @debug bit = 'false', /*print dynamic sql, show temp table contents*/
     @version varchar(20) = NULL OUTPUT, /*script version number*/
@@ -15666,6 +15670,7 @@ BEGIN TRY
                     WHEN N'@get_all_databases' THEN 'set to 1 to analyze all accessible user databases'
                     WHEN N'@include_databases' THEN 'comma-separated list of databases to include when @get_all_databases = 1'
                     WHEN N'@exclude_databases' THEN 'comma-separated list of databases to exclude when @get_all_databases = 1'
+                    WHEN N'@sort_order' THEN 'controls final result ordering: default groups by script type within each database, object groups all rows for the same index together (Key Subset disables sort under their replacement index)'
                     WHEN N'@help' THEN 'displays this help information'
                     WHEN N'@debug' THEN 'prints debug information during execution'
                     WHEN N'@version' THEN 'returns the version number of the procedure'
@@ -15686,6 +15691,7 @@ BEGIN TRY
                     WHEN N'@get_all_databases' THEN '0 or 1'
                     WHEN N'@include_databases' THEN 'comma-separated list of database names'
                     WHEN N'@exclude_databases' THEN 'comma-separated list of database names'
+                    WHEN N'@sort_order' THEN 'default or object'
                     WHEN N'@help' THEN '0 or 1'
                     WHEN N'@debug' THEN '0 or 1'
                     WHEN N'@version' THEN 'OUTPUT parameter'
@@ -15706,6 +15712,7 @@ BEGIN TRY
                     WHEN N'@get_all_databases' THEN 'false'
                     WHEN N'@include_databases' THEN 'NULL'
                     WHEN N'@exclude_databases' THEN 'NULL'
+                    WHEN N'@sort_order' THEN 'default'
                     WHEN N'@help' THEN 'false'
                     WHEN N'@debug' THEN 'false'
                     WHEN N'@version' THEN 'NULL'
@@ -15754,6 +15761,17 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
         RETURN;
     END;
 
+    /*
+    Validate @sort_order
+    */
+    SET @sort_order = LOWER(LTRIM(RTRIM(ISNULL(@sort_order, N'default'))));
+
+    IF @sort_order NOT IN (N'default', N'object')
+    BEGIN
+        RAISERROR(N'@sort_order must be either ''default'' or ''object''.', 16, 1);
+        RETURN;
+    END;
+
     IF @debug = 1
     BEGIN
         RAISERROR('Declaring variables', 0, 0) WITH NOWAIT;
@@ -15792,7 +15810,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
                       (
                           integer,
                           SERVERPROPERTY('EngineEdition')
-                      ) = 2
+                      ) IN (2, 4)
                       AND CONVERT
                           (
                               integer,
@@ -15817,8 +15835,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
                 /* Azure SQL DB or Managed Instance */
                 WHEN CONVERT(integer, SERVERPROPERTY('EngineEdition')) IN (5, 8)
                 THEN 1
-                /* SQL Server 2019+ (Enterprise or Standard) */
-                WHEN CONVERT(integer, SERVERPROPERTY('EngineEdition')) IN (2, 3)
+                /* SQL Server 2019+ (Enterprise, Standard, Web, or Express) */
+                WHEN CONVERT(integer, SERVERPROPERTY('EngineEdition')) IN (2, 3, 4)
                      AND CONVERT
                          (
                              integer,
@@ -16724,6 +16742,34 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
         /* Single database mode */
         IF @database_name IS NOT NULL
         BEGIN
+            /*
+            Preflight: if the database exists and is otherwise eligible but the current
+            principal has no access, fail loud rather than letting downstream queries hang.
+            sp_IndexCleanup queries sys.dm_db_partition_stats via three-part name, which
+            under a SQL Server permission/recompile bug spins at 100% CPU forever instead
+            of erroring (Msg 916). See PerformanceMonitor issue #915.
+            */
+            IF EXISTS
+               (
+                   SELECT
+                       1/0
+                   FROM sys.databases AS d
+                   WHERE d.name = @database_name
+                   AND   d.state = 0
+                   AND   d.is_in_standby = 0
+                   AND   d.is_read_only = 0
+               )
+            AND ISNULL(HAS_DBACCESS(@database_name), 0) = 0
+            BEGIN
+                SET @error_msg =
+                    N'The current login has no access to database ' +
+                    QUOTENAME(@database_name) +
+                    N'. Run, against that database: CREATE USER [<login>] FOR LOGIN [<login>]; GRANT VIEW DATABASE STATE; GRANT VIEW DEFINITION;';
+
+                RAISERROR(@error_msg, 16, 1);
+                RETURN;
+            END;
+
             INSERT INTO
                 #databases
             WITH
@@ -16740,6 +16786,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
             AND   d.state = 0
             AND   d.is_in_standby = 0
             AND   d.is_read_only = 0
+            AND   HAS_DBACCESS(d.name) = 1
             OPTION(RECOMPILE);
 
             /* Get the database_id for backwards compatibility */
@@ -16751,7 +16798,12 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
     END
     ELSE
     BEGIN
-        /* Multi-database mode */
+        /*
+        Multi-database mode. HAS_DBACCESS gates which databases the current principal can
+        actually query; without this filter, three-part-name queries against
+        sys.dm_db_partition_stats hang indefinitely under a SQL Server permission/recompile
+        bug. See PerformanceMonitor issue #915.
+        */
         INSERT INTO
             #databases
         WITH
@@ -16768,6 +16820,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
         AND   d.state = 0
         AND   d.is_in_standby = 0
         AND   d.is_read_only = 0
+        AND   HAS_DBACCESS(d.name) = 1
         AND   (
                 @include_databases IS NULL
                 OR EXISTS (SELECT 1/0 FROM #include_databases AS id WHERE id.database_name = d.name)
@@ -16777,6 +16830,81 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
                 OR NOT EXISTS (SELECT 1/0 FROM #exclude_databases AS ed WHERE ed.database_name = d.name)
               )
         OPTION(RECOMPILE);
+
+        /*
+        Track databases that would otherwise qualify but were skipped because the current
+        principal has no access. These surface in the SUMMARY row so the operator knows
+        which databases need GRANT before they will be analyzed.
+        */
+        INSERT INTO
+            #requested_but_skipped_databases
+        WITH
+            (TABLOCK)
+        (
+            database_name,
+            reason
+        )
+        SELECT
+            d.name,
+            reason = N'No database access for current login'
+        FROM sys.databases AS d
+        WHERE d.database_id > 4
+        AND   d.state = 0
+        AND   d.is_in_standby = 0
+        AND   d.is_read_only = 0
+        AND   ISNULL(HAS_DBACCESS(d.name), 0) = 0
+        AND   (
+                @include_databases IS NULL
+                OR EXISTS (SELECT 1/0 FROM #include_databases AS id WHERE id.database_name = d.name)
+              )
+        AND   (
+                @exclude_databases IS NULL
+                OR NOT EXISTS (SELECT 1/0 FROM #exclude_databases AS ed WHERE ed.database_name = d.name)
+              )
+        OPTION(RECOMPILE);
+
+        /*
+        Surface a non-fatal warning listing the skipped databases. Severity 10 with NOWAIT
+        matches existing progress messages and is visible regardless of @debug. Skipped
+        databases never produce result-set rows; they appear in the SUMMARY row's
+        "skipped databases" column.
+        */
+        IF EXISTS
+           (
+               SELECT
+                   1/0
+               FROM #requested_but_skipped_databases AS rbs
+               WHERE rbs.reason = N'No database access for current login'
+           )
+        BEGIN
+            SET @error_msg = N'';
+
+            SELECT
+                @error_msg =
+                    @error_msg +
+                    rbs.database_name +
+                    N', '
+            FROM #requested_but_skipped_databases AS rbs
+            WHERE rbs.reason = N'No database access for current login'
+            ORDER BY
+                rbs.database_name
+            OPTION(RECOMPILE);
+
+            IF DATALENGTH(@error_msg) > 0
+            BEGIN
+                SET @error_msg = LEFT(@error_msg, DATALENGTH(@error_msg) / 2 - 2);
+
+                SET @error_msg =
+                    N'Skipping these databases - current login has no access: ' +
+                    @error_msg +
+                    N'. Run, against each: CREATE USER [<login>] FOR LOGIN [<login>]; GRANT VIEW DATABASE STATE; GRANT VIEW DEFINITION;';
+
+                RAISERROR(@error_msg, 10, 1) WITH NOWAIT;
+
+                /* Reset for subsequent uses below. */
+                SET @error_msg = N'';
+            END;
+        END;
     END;
 
     /* Check for empty database list */
@@ -16825,6 +16953,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
                     THEN 'Database is read-only'
                     WHEN d.database_id <= 4
                     THEN 'System database'
+                    WHEN ISNULL(HAS_DBACCESS(d.name), 0) = 0
+                    THEN 'No database access for current login'
                     ELSE 'Other issue'
                 END
         FROM #include_databases AS id
@@ -16836,6 +16966,14 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
                       1/0
                   FROM #databases AS db
                   WHERE db.database_name = id.database_name
+              )
+        /* HAS_DBACCESS skips were already recorded above; avoid PK conflicts. */
+        AND   NOT EXISTS
+              (
+                  SELECT
+                      1/0
+                  FROM #requested_but_skipped_databases AS rbs
+                  WHERE rbs.database_name = id.database_name
               )
         OPTION(RECOMPILE);
 
@@ -19261,6 +19399,19 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
         AND   id_fk.is_foreign_key_reference = 1
         AND   id_fk.is_included_column = 0
     )
+    /* ia_nc must be a true nonclustered index, not another unique constraint.
+       Without this, two UCs with identical keys both match each other and
+       both get action = DISABLE pointing at the other, with neither getting
+       MAKE UNIQUE in the next step — so every UC in the group ends up
+       dropped. UC-vs-UC duplicates are handled in Rule 7.5b below. */
+    AND NOT EXISTS
+    (
+        SELECT
+            1/0
+        FROM #index_details AS id_nc
+        WHERE id_nc.index_hash = ia_nc.index_hash
+        AND   id_nc.is_unique_constraint = 1
+    )
     OPTION(RECOMPILE);
 
     /* Second, mark nonclustered indexes to be made unique */
@@ -19341,6 +19492,111 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
     BEGIN
         SELECT
             table_name = '#index_analysis after rule 7.5',
+            ia.*
+        FROM #index_analysis AS ia
+        OPTION(RECOMPILE);
+    END;
+
+    /* Rule 7.5b: Duplicate unique constraints with no replacement nonclustered
+       index. Rule 7 marks every UC with a matching-key sibling as KEEP under
+       'Unique Constraint Replacement'. When two or more UCs share identical
+       keys and there is no separate nonclustered index to promote (Rule 7.5
+       would otherwise fold them in), we still need to drop all but one.
+       Demote the loser(s) to DISABLE so the existing DISABLE CONSTRAINT
+       SCRIPT path emits a single DROP CONSTRAINT for the duplicates while
+       the keeper stays silent. */
+    UPDATE
+        ia_loser
+    SET
+        ia_loser.action = N'DISABLE',
+        ia_loser.target_index_name = ia_keeper.index_name
+    FROM #index_analysis AS ia_loser
+    JOIN #index_analysis AS ia_keeper
+      ON  ia_keeper.scope_hash = ia_loser.scope_hash
+      AND ia_keeper.index_name <> ia_loser.index_name
+      AND ia_keeper.key_columns = ia_loser.key_columns
+      AND ISNULL(ia_keeper.filter_definition, N'') = ISNULL(ia_loser.filter_definition, N'')
+    WHERE ia_loser.action = N'KEEP'
+    AND   ia_loser.consolidation_rule = N'Unique Constraint Replacement'
+    AND   ia_keeper.action = N'KEEP'
+    AND   ia_keeper.consolidation_rule = N'Unique Constraint Replacement'
+    /* Both rows must be unique constraints (not regular nonclustered indexes
+       that Rule 7 also marked KEEP for some reason) */
+    AND EXISTS
+    (
+        SELECT
+            1/0
+        FROM #index_details AS id_loser
+        WHERE id_loser.index_hash = ia_loser.index_hash
+        AND   id_loser.is_unique_constraint = 1
+    )
+    AND EXISTS
+    (
+        SELECT
+            1/0
+        FROM #index_details AS id_keeper
+        WHERE id_keeper.index_hash = ia_keeper.index_hash
+        AND   id_keeper.is_unique_constraint = 1
+    )
+    /* Demote the loser deterministically: lower priority, or alphabetically
+       later when tied. Mirrors the keep/drop tiebreak used by Rule 2. */
+    AND
+    (
+        ia_loser.index_priority < ia_keeper.index_priority
+        OR
+        (
+            ia_loser.index_priority = ia_keeper.index_priority
+            AND ia_loser.index_name > ia_keeper.index_name
+        )
+    )
+    /* When 3+ UCs are duplicates, ensure ia_keeper is the single overall
+       winner (no other UC beats it). This makes target_index_name
+       deterministic and points every loser at the same surviving UC. */
+    AND NOT EXISTS
+    (
+        SELECT
+            1/0
+        FROM #index_analysis AS ia_better
+        WHERE ia_better.scope_hash = ia_keeper.scope_hash
+        AND   ia_better.index_name <> ia_keeper.index_name
+        AND   ia_better.key_columns = ia_keeper.key_columns
+        AND   ISNULL(ia_better.filter_definition, N'') = ISNULL(ia_keeper.filter_definition, N'')
+        AND   ia_better.action = N'KEEP'
+        AND   ia_better.consolidation_rule = N'Unique Constraint Replacement'
+        AND EXISTS
+        (
+            SELECT
+                1/0
+            FROM #index_details AS id_better
+            WHERE id_better.index_hash = ia_better.index_hash
+            AND   id_better.is_unique_constraint = 1
+        )
+        AND
+        (
+            ia_better.index_priority > ia_keeper.index_priority
+            OR
+            (
+                ia_better.index_priority = ia_keeper.index_priority
+                AND ia_better.index_name < ia_keeper.index_name
+            )
+        )
+    )
+    /* Don't propose dropping a UC that backs an inbound foreign key */
+    AND NOT EXISTS
+    (
+        SELECT
+            1/0
+        FROM #index_details AS id_fk
+        WHERE id_fk.index_hash = ia_loser.index_hash
+        AND   id_fk.is_foreign_key_reference = 1
+        AND   id_fk.is_included_column = 0
+    )
+    OPTION(RECOMPILE);
+
+    IF @debug = 1
+    BEGIN
+        SELECT
+            table_name = '#index_analysis after rule 7.5b',
             ia.*
         FROM #index_analysis AS ia
         OPTION(RECOMPILE);
@@ -20787,6 +21043,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
         table_name,
         index_name,
         script_type,
+        consolidation_rule,
+        target_index_name,
         additional_info,
         script,
         original_index_definition,
@@ -20803,6 +21061,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
         ia_uc.table_name,
         ia_uc.index_name,
         script_type = 'DISABLE CONSTRAINT SCRIPT',
+        ia_uc.consolidation_rule,
+        ia_uc.target_index_name,
         additional_info =
             N'This constraint is being replaced by: ' +
             ISNULL(ia_uc.target_index_name, N'(unknown)'),
@@ -21976,9 +22236,43 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
     WHERE ir.rn = 1 /* Take only the first row for each index */
     ORDER BY
         ir.database_name,
-        ir.sort_order,
-        /* Within each sort_order group, prioritize by size and usage */
+        /* Object mode: cluster by schema/table/index before script type */
+        CASE WHEN @sort_order = N'object' THEN ir.schema_name END,
+        CASE WHEN @sort_order = N'object' THEN ir.table_name END,
+        /*
+        Any DISABLE SCRIPT or DISABLE CONSTRAINT row that points at a
+        replacement (target_index_name IS NOT NULL) sorts under that
+        replacement's index_name, so losers end up next to their keeper
+        regardless of consolidation_rule (Key Subset, Unique Constraint
+        Replacement, Exact Duplicate, Key Duplicate, etc.).
+        */
         CASE
+            WHEN @sort_order = N'object'
+             AND ir.script_type IN (N'DISABLE SCRIPT', N'DISABLE CONSTRAINT SCRIPT')
+             AND ir.target_index_name IS NOT NULL
+            THEN ir.target_index_name
+            WHEN @sort_order = N'object'
+            THEN ir.index_name
+        END,
+        /*
+        Within a paired cluster, the keeper sorts before its losers. Without
+        this, a keeper that's a KEPT index (sort_order 95) would sort after
+        its DISABLE losers (sort_order 20).
+        */
+        CASE
+            WHEN @sort_order = N'object'
+             AND ir.script_type IN (N'DISABLE SCRIPT', N'DISABLE CONSTRAINT SCRIPT')
+             AND ir.target_index_name IS NOT NULL
+            THEN 2
+            WHEN @sort_order = N'object'
+            THEN 1
+        END,
+        /* Always order by script type within the current grouping */
+        ir.sort_order,
+        /* Default mode: within each sort_order group, prioritize by size and usage */
+        CASE
+            WHEN @sort_order <> N'default'
+            THEN NULL
             /* For SUMMARY, keep the original order */
             WHEN ir.result_type = 'SUMMARY'
             THEN 0
@@ -21986,6 +22280,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
             ELSE ISNULL(ir.index_size_gb, 0)
         END DESC,
         CASE
+            WHEN @sort_order <> N'default'
+            THEN NULL
             /* For SUMMARY, keep the original order */
             WHEN ir.result_type = 'SUMMARY'
             THEN 0
@@ -40007,7 +40303,7 @@ ALTER PROCEDURE
     @timezone sysname = NULL, /*user specified time zone to override dates displayed in results*/
     @execution_count bigint = NULL, /*the minimum number of executions a query must have*/
     @duration_ms bigint = NULL, /*the minimum duration a query must have to show up in results*/
-    @execution_type_desc nvarchar(60) = NULL, /*the type of execution you want to filter by (regular, aborted, exception)*/
+    @execution_type_desc nvarchar(60) = NULL, /*the type of execution you want to filter by (regular, aborted, exception, failed); failed bundles aborted and exception*/
     @procedure_schema sysname = NULL, /*the schema of the procedure you're searching for*/
     @procedure_name sysname = NULL, /*the name of the programmable object you're searching for*/
     @include_plan_ids nvarchar(4000) = NULL, /*a list of plan ids to search for*/
@@ -40110,7 +40406,7 @@ BEGIN
                 WHEN N'@timezone' THEN 'user specified time zone to override dates displayed in results'
                 WHEN N'@execution_count' THEN 'the minimum number of executions a query must have'
                 WHEN N'@duration_ms' THEN 'the minimum duration a query must have to show up in results'
-                WHEN N'@execution_type_desc' THEN 'the type of execution you want to filter by (regular, aborted, exception)'
+                WHEN N'@execution_type_desc' THEN 'the type of execution you want to filter by (regular, aborted, exception, failed); failed bundles aborted and exception'
                 WHEN N'@procedure_schema' THEN 'the schema of the procedure you''re searching for'
                 WHEN N'@procedure_name' THEN 'the name of the programmable object you''re searching for'
                 WHEN N'@include_plan_ids' THEN 'a list of plan ids to search for'
@@ -40173,7 +40469,7 @@ BEGIN
                 WHEN N'@timezone' THEN 'SELECT tzi.* FROM sys.time_zone_info AS tzi;'
                 WHEN N'@execution_count' THEN 'a positive integer between 1 and 9,223,372,036,854,775,807'
                 WHEN N'@duration_ms' THEN 'a positive integer between 1 and 9,223,372,036,854,775,807'
-                WHEN N'@execution_type_desc' THEN 'regular, aborted, exception'
+                WHEN N'@execution_type_desc' THEN 'regular, aborted, exception, failed'
                 WHEN N'@procedure_schema' THEN 'a valid schema in your database'
                 WHEN N'@procedure_name' THEN 'a valid programmable object in your database, can use wildcards'
                 WHEN N'@include_plan_ids' THEN 'a string; comma separated for multiple ids'
@@ -42833,13 +43129,14 @@ Error out if the @execution_type_desc value is invalid.
 IF
 (
     @execution_type_desc IS NOT NULL
-AND @execution_type_desc NOT IN ('regular', 'aborted', 'exception')
+AND @execution_type_desc NOT IN ('regular', 'aborted', 'exception', 'failed')
 )
 BEGIN
-    RAISERROR('@execution_type_desc can only take one of these three non-NULL values:
+    RAISERROR('@execution_type_desc can only take one of these four non-NULL values:
     1) ''regular'' (meaning a successful execution),
     2) ''aborted'' (meaning that the client cancelled the query),
-    3) ''exception'' (meaning that an exception cancelled the query).
+    3) ''exception'' (meaning that an exception cancelled the query),
+    4) ''failed'' (a convenience value that bundles both ''aborted'' and ''exception'').
 
 You supplied ''%s''.
 
@@ -46797,8 +47094,16 @@ END;
 
 IF @execution_type_desc IS NOT NULL
 BEGIN
-    SELECT
-        @where_clause += N'    AND   qsrs.execution_type_desc = @execution_type_desc' + @nc10;
+    IF @execution_type_desc = N'failed'
+    BEGIN
+        SELECT
+            @where_clause += N'    AND   qsrs.execution_type_desc IN (N''aborted'', N''exception'')' + @nc10;
+    END;
+    ELSE
+    BEGIN
+        SELECT
+            @where_clause += N'    AND   qsrs.execution_type_desc = @execution_type_desc' + @nc10;
+    END;
 END;
 
 IF @workdays = 1
