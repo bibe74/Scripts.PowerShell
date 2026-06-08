@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-05-31 16:59:43
+Version: 2026-06-07 23:07:00
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -123,6 +123,8 @@ ALTER PROCEDURE [dbo].[CommandExecute]
 @IndexType int = NULL,
 @StatisticsName nvarchar(max) = NULL,
 @PartitionNumber int = NULL,
+@EncryptionKey nvarchar(max) = NULL,
+@EncryptionKeyPlaceholder nvarchar(max) = NULL,
 @ExtendedInfo xml = NULL,
 @LockMessageSeverity int = 16,
 @ExecuteAsUser nvarchar(max) = NULL,
@@ -137,7 +139,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-31 16:59:43                                                               //--
+  --// Version: 2026-06-07 23:07:00                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -170,6 +172,8 @@ BEGIN
   DECLARE @EmptyLine nvarchar(max) = CHAR(9)
 
   DECLARE @RevertCommand nvarchar(max)
+
+  DECLARE @CommandMasked nvarchar(max)
 
   ----------------------------------------------------------------------------------------------------
   --// Check core requirements                                                                    //--
@@ -219,6 +223,12 @@ BEGIN
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @Mode is not supported.', 16, 1
+  END
+
+  IF (@EncryptionKey IS NULL AND @EncryptionKeyPlaceholder IS NOT NULL) OR (@EncryptionKey IS NOT NULL AND @EncryptionKeyPlaceholder IS NULL)
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The parameters @EncryptionKey and @EncryptionKeyPlaceholder must be specified together.', 16, 1
   END
 
   IF @LockMessageSeverity NOT IN(10,16) OR @LockMessageSeverity IS NULL
@@ -285,6 +295,14 @@ BEGIN
   END
 
   ----------------------------------------------------------------------------------------------------
+  --// Mask encryption key                                                                        //--
+  ----------------------------------------------------------------------------------------------------
+
+  SET @CommandMasked = CASE WHEN @EncryptionKeyPlaceholder IS NULL THEN @Command ELSE REPLACE(@Command,@EncryptionKeyPlaceholder,'********') END
+
+  SET @Command = CASE WHEN @EncryptionKeyPlaceholder IS NULL THEN @Command ELSE REPLACE(@Command,@EncryptionKeyPlaceholder,REPLACE(ISNULL(@EncryptionKey,''),'''','''''')) END
+
+  ----------------------------------------------------------------------------------------------------
   --// Log initial information                                                                    //--
   ----------------------------------------------------------------------------------------------------
 
@@ -296,7 +314,7 @@ BEGIN
   SET @StartMessage = 'Database context: ' + QUOTENAME(@DatabaseContext)
   RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
-  SET @StartMessage = 'Command: ' + @Command
+  SET @StartMessage = 'Command: ' + @CommandMasked
   RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
   IF @Comment IS NOT NULL
@@ -308,7 +326,7 @@ BEGIN
   IF @LogToTable = 'Y'
   BEGIN
     INSERT INTO dbo.CommandLog (DatabaseName, SchemaName, ObjectName, ObjectType, IndexName, IndexType, StatisticsName, PartitionNumber, ExtendedInfo, CommandType, Command, StartTime)
-    VALUES (@DatabaseName, @SchemaName, @ObjectName, @ObjectType, @IndexName, @IndexType, @StatisticsName, @PartitionNumber, @ExtendedInfo, @CommandType, @Command, @StartTime)
+    VALUES (@DatabaseName, @SchemaName, @ObjectName, @ObjectType, @IndexName, @IndexType, @StatisticsName, @PartitionNumber, @ExtendedInfo, @CommandType, @CommandMasked, @StartTime)
   END
 
   SET @ID = SCOPE_IDENTITY()
@@ -480,7 +498,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-31 16:59:43                                                               //--
+  --// Version: 2026-06-07 23:07:00                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -657,16 +675,20 @@ BEGIN
                                       CleanupDate datetime2,
                                       Mirror bit)
 
+  DECLARE @EncryptionKeyMasked nvarchar(max) = CASE WHEN @EncryptionKey IS NULL THEN NULL ELSE '********' END
+
+  DECLARE @EncryptionKeyPlaceholder nvarchar(max) = CASE WHEN @EncryptionKey IS NULL THEN NULL ELSE CAST(NEWID() AS nvarchar(max)) END
+
   DECLARE @Error int = 0
   DECLARE @ReturnCode int = 0
 
   DECLARE @EmptyLine nvarchar(max) = CHAR(9)
 
-  DECLARE @Version numeric(18,10) = CAST(LEFT(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),CHARINDEX('.',CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))) - 1) + '.' + REPLACE(RIGHT(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)), LEN(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))) - CHARINDEX('.',CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)))),'.','') AS numeric(18,10))
+  DECLARE @Version numeric(18,10) = CAST(PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),4) + '.' + PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),3) + PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),2) AS numeric(18,10))
 
   IF SERVERPROPERTY('EngineEdition') = 8 AND SERVERPROPERTY('ProductVersion') = '12.0.2000.8' AND SERVERPROPERTY('ProductUpdateType') = 'CU'
   BEGIN
-    SET @Version = 16.010006
+    SET @Version = 16.01000
   END
 
   IF SERVERPROPERTY('EngineEdition') <> 5
@@ -718,7 +740,7 @@ BEGIN
   SET @Parameters += ', @EncryptionAlgorithm = ' + ISNULL('''' + REPLACE(@EncryptionAlgorithm,'''','''''') + '''','NULL')
   SET @Parameters += ', @ServerCertificate = ' + ISNULL('''' + REPLACE(@ServerCertificate,'''','''''') + '''','NULL')
   SET @Parameters += ', @ServerAsymmetricKey = ' + ISNULL('''' + REPLACE(@ServerAsymmetricKey,'''','''''') + '''','NULL')
-  SET @Parameters += ', @EncryptionKey = ' + ISNULL('''' + REPLACE(@EncryptionKey,'''','''''') + '''','NULL')
+  SET @Parameters += ', @EncryptionKey = ' + ISNULL('''' + @EncryptionKeyMasked + '''','NULL')
   SET @Parameters += ', @ReadWriteFileGroups = ' + ISNULL('''' + REPLACE(@ReadWriteFileGroups,'''','''''') + '''','NULL')
   SET @Parameters += ', @OverrideBackupPreference = ' + ISNULL('''' + REPLACE(@OverrideBackupPreference,'''','''''') + '''','NULL')
   SET @Parameters += ', @NoRecovery = ' + ISNULL('''' + REPLACE(@NoRecovery,'''','''''') + '''','NULL')
@@ -832,7 +854,7 @@ BEGIN
     SELECT 'The stored procedure CommandExecute is missing. Download https://ola.hallengren.com/scripts/CommandExecute.sql.', 16, 1
   END
 
-  IF EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'P' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandExecute' AND OBJECT_DEFINITION(objects.[object_id]) NOT LIKE '%@DatabaseContext%')
+  IF EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'P' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandExecute' AND OBJECT_DEFINITION(objects.[object_id]) NOT LIKE '%@EncryptionKeyPlaceholder%')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The stored procedure CommandExecute needs to be updated. Download https://ola.hallengren.com/scripts/CommandExecute.sql.', 16, 1
@@ -3183,7 +3205,7 @@ BEGIN
 
     SELECT @CurrentMaxTransferSize = CASE
     WHEN @MaxTransferSize IS NOT NULL THEN @MaxTransferSize
-    WHEN @MaxTransferSize IS NULL AND @Compress = 'Y' AND @CurrentIsEncrypted = 1 AND @BackupSoftware IS NULL AND ((@Version >= 13 AND @Version < 15.0404316) OR (SERVERPROPERTY('EngineEdition') = 8 AND SERVERPROPERTY('ProductUpdateType') = 'Continuous')) AND @Credential IS NULL THEN 65537
+    WHEN @MaxTransferSize IS NULL AND @Compress = 'Y' AND @CurrentIsEncrypted = 1 AND @BackupSoftware IS NULL AND (@Version < 15.04043 AND NOT (SERVERPROPERTY('EngineEdition') = 8 AND SERVERPROPERTY('ProductUpdateType') = 'Continuous')) AND @Credential IS NULL THEN 65537
     END
 
     IF SERVERPROPERTY('IsHadrEnabled') = 1
@@ -4121,7 +4143,7 @@ BEGIN
 
             SET @CurrentCommandType = 'sqbutility'
 
-            SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.sqbutility 1032, N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''', N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + CASE WHEN @CurrentBackupType = 'FULL' THEN 'D' WHEN @CurrentBackupType = 'DIFF' THEN 'I' WHEN @CurrentBackupType = 'LOG' THEN 'L' END + ''', ''' + CAST(DATEDIFF(hh,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar(max)) + 'h'', ' + ISNULL('''' + REPLACE(@EncryptionKey,'''','''''') + '''','NULL') + ' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error deleting SQLBackup backup files.'', 16, 1)'
+            SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.sqbutility 1032, N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''', N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + CASE WHEN @CurrentBackupType = 'FULL' THEN 'D' WHEN @CurrentBackupType = 'DIFF' THEN 'I' WHEN @CurrentBackupType = 'LOG' THEN 'L' END + ''', ''' + CAST(DATEDIFF(hh,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar(max)) + 'h'', ' + ISNULL('''' + @EncryptionKeyPlaceholder + '''','NULL') + ' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error deleting SQLBackup backup files.'', 16, 1)'
           END
 
           IF @BackupSoftware = 'SQLSAFE'
@@ -4133,7 +4155,7 @@ BEGIN
             SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_ss_delete @filename = N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + '\*.' + @CurrentFileExtension + ''', @age = ''' + CAST(DATEDIFF(mi,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar(max)) + 'Minutes'' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error deleting SQLsafe backup files.'', 16, 1)'
           END
 
-          EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+          EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @EncryptionKey = @EncryptionKey, @EncryptionKeyPlaceholder = @EncryptionKeyPlaceholder, @LogToTable = @LogToTable, @Execute = @Execute
           SET @Error = @@ERROR
           IF @Error <> 0 SET @CurrentCommandOutput = @Error
           IF @CurrentCommandOutput <> 0 SET @ReturnCode = @CurrentCommandOutput
@@ -4195,7 +4217,7 @@ BEGIN
           IF @Checksum = 'Y' SET @CurrentCommand += 'CHECKSUM'
           IF @Checksum = 'N' SET @CurrentCommand += 'NO_CHECKSUM'
 
-          SET @CurrentCommand += CASE WHEN @Compress = 'Y' AND (@CurrentIsEncrypted = 0 OR (@CurrentIsEncrypted = 1 AND (@CurrentMaxTransferSize >= 65537 OR (@Version >= 15.0404316 OR (SERVERPROPERTY('EngineEdition') = 8 AND SERVERPROPERTY('ProductUpdateType') = 'Continuous'))))) THEN ', COMPRESSION' ELSE ', NO_COMPRESSION' END
+          SET @CurrentCommand += CASE WHEN @Compress = 'Y' AND (@CurrentIsEncrypted = 0 OR (@CurrentIsEncrypted = 1 AND (@CurrentMaxTransferSize >= 65537 OR (@Version >= 15.04043 OR (SERVERPROPERTY('EngineEdition') = 8 AND SERVERPROPERTY('ProductUpdateType') = 'Continuous'))))) THEN ', COMPRESSION' ELSE ', NO_COMPRESSION' END
 
           IF @Compress = 'Y' AND @CompressionAlgorithm IS NOT NULL
           BEGIN
@@ -4290,7 +4312,7 @@ BEGIN
           WHEN @EncryptionAlgorithm = 'AES_256' THEN '8'
           END
 
-          IF @EncryptionKey IS NOT NULL SET @CurrentCommand += ', @encryptionkey = N''' + REPLACE(@EncryptionKey,'''','''''') + ''''
+          IF @EncryptionKey IS NOT NULL SET @CurrentCommand += ', @encryptionkey = N''' + @EncryptionKeyPlaceholder + ''''
           SET @CurrentCommand += ' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error performing LiteSpeed backup.'', 16, 1)'
         END
 
@@ -4338,7 +4360,7 @@ BEGIN
           WHEN @EncryptionAlgorithm = 'AES_256' THEN '256'
           END
 
-          IF @EncryptionKey IS NOT NULL SET @CurrentCommand += ', PASSWORD = N''' + REPLACE(@EncryptionKey,'''','''''') + ''''
+          IF @EncryptionKey IS NOT NULL SET @CurrentCommand += ', PASSWORD = N''' + @EncryptionKeyPlaceholder + ''''
           SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.sqlbackup N''-SQL "' + REPLACE(@CurrentCommand,'''','''''') + '"''' + ' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error performing SQLBackup backup.'', 16, 1)'
         END
 
@@ -4382,7 +4404,7 @@ BEGIN
           WHEN @EncryptionAlgorithm = 'AES_256' THEN 'AES256'
           END + ''''
 
-          IF @EncryptionKey IS NOT NULL SET @CurrentCommand += ', @encryptedbackuppassword = N''' + REPLACE(@EncryptionKey,'''','''''') + ''''
+          IF @EncryptionKey IS NOT NULL SET @CurrentCommand += ', @encryptedbackuppassword = N''' + @EncryptionKeyPlaceholder + ''''
           SET @CurrentCommand += ' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error performing SQLsafe backup.'', 16, 1)'
         END
 
@@ -4438,7 +4460,7 @@ BEGIN
           SET @CurrentCommand += ' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error performing Data Domain Boost backup.'', 16, 1)'
         END
 
-        EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+        EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @EncryptionKey = @EncryptionKey, @EncryptionKeyPlaceholder = @EncryptionKeyPlaceholder, @LogToTable = @LogToTable, @Execute = @Execute
         SET @Error = @@ERROR
         IF @Error <> 0 SET @CurrentCommandOutput = @Error
         IF @CurrentCommandOutput <> 0 SET @ReturnCode = @CurrentCommandOutput
@@ -4499,7 +4521,7 @@ BEGIN
             IF @Checksum = 'Y' SET @CurrentCommand += 'CHECKSUM'
             IF @Checksum = 'N' SET @CurrentCommand += 'NO_CHECKSUM'
             SET @CurrentCommand += ''''
-            IF @EncryptionKey IS NOT NULL SET @CurrentCommand += ', @encryptionkey = N''' + REPLACE(@EncryptionKey,'''','''''') + ''''
+            IF @EncryptionKey IS NOT NULL SET @CurrentCommand += ', @encryptionkey = N''' + @EncryptionKeyPlaceholder + ''''
 
             SET @CurrentCommand += ' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error verifying LiteSpeed backup.'', 16, 1)'
           END
@@ -4520,7 +4542,7 @@ BEGIN
             SET @CurrentCommand += ' WITH '
             IF @Checksum = 'Y' SET @CurrentCommand += 'CHECKSUM'
             IF @Checksum = 'N' SET @CurrentCommand += 'NO_CHECKSUM'
-            IF @EncryptionKey IS NOT NULL SET @CurrentCommand += ', PASSWORD = N''' + REPLACE(@EncryptionKey,'''','''''') + ''''
+            IF @EncryptionKey IS NOT NULL SET @CurrentCommand += ', PASSWORD = N''' + @EncryptionKeyPlaceholder + ''''
 
             SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.sqlbackup N''-SQL "' + REPLACE(@CurrentCommand,'''','''''') + '"''' + ' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error verifying SQLBackup backup.'', 16, 1)'
           END
@@ -4546,7 +4568,7 @@ BEGIN
             SET @CurrentCommand += ' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error verifying SQLsafe backup.'', 16, 1)'
           END
 
-          EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+          EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @EncryptionKey = @EncryptionKey, @EncryptionKeyPlaceholder = @EncryptionKeyPlaceholder, @LogToTable = @LogToTable, @Execute = @Execute
           SET @Error = @@ERROR
           IF @Error <> 0 SET @CurrentCommandOutput = @Error
           IF @CurrentCommandOutput <> 0 SET @ReturnCode = @CurrentCommandOutput
@@ -4644,7 +4666,7 @@ BEGIN
 
             SET @CurrentCommandType = 'sqbutility'
 
-            SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.sqbutility 1032, N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''', N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + CASE WHEN @CurrentBackupType = 'FULL' THEN 'D' WHEN @CurrentBackupType = 'DIFF' THEN 'I' WHEN @CurrentBackupType = 'LOG' THEN 'L' END + ''', ''' + CAST(DATEDIFF(hh,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar(max)) + 'h'', ' + ISNULL('''' + REPLACE(@EncryptionKey,'''','''''') + '''','NULL') + ' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error deleting SQLBackup backup files.'', 16, 1)'
+            SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.sqbutility 1032, N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''', N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + CASE WHEN @CurrentBackupType = 'FULL' THEN 'D' WHEN @CurrentBackupType = 'DIFF' THEN 'I' WHEN @CurrentBackupType = 'LOG' THEN 'L' END + ''', ''' + CAST(DATEDIFF(hh,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar(max)) + 'h'', ' + ISNULL('''' + @EncryptionKeyPlaceholder + '''','NULL') + ' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error deleting SQLBackup backup files.'', 16, 1)'
           END
 
           IF @BackupSoftware = 'SQLSAFE'
@@ -4656,7 +4678,7 @@ BEGIN
             SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_ss_delete @filename = N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + '\*.' + @CurrentFileExtension + ''', @age = ''' + CAST(DATEDIFF(mi,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar(max)) + 'Minutes'' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error deleting SQLsafe backup files.'', 16, 1)'
           END
 
-          EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+          EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @EncryptionKey = @EncryptionKey, @EncryptionKeyPlaceholder = @EncryptionKeyPlaceholder, @LogToTable = @LogToTable, @Execute = @Execute
           SET @Error = @@ERROR
           IF @Error <> 0 SET @CurrentCommandOutput = @Error
           IF @CurrentCommandOutput <> 0 SET @ReturnCode = @CurrentCommandOutput
@@ -4828,7 +4850,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-31 16:59:43                                                               //--
+  --// Version: 2026-06-07 23:07:00                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4972,11 +4994,11 @@ BEGIN
 
   DECLARE @EmptyLine nvarchar(max) = CHAR(9)
 
-  DECLARE @Version numeric(18,10) = CAST(LEFT(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),CHARINDEX('.',CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))) - 1) + '.' + REPLACE(RIGHT(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)), LEN(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))) - CHARINDEX('.',CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)))),'.','') AS numeric(18,10))
+  DECLARE @Version numeric(18,10) = CAST(PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),4) + '.' + PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),3) + PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),2) AS numeric(18,10))
 
   IF SERVERPROPERTY('EngineEdition') = 8 AND SERVERPROPERTY('ProductVersion') = '12.0.2000.8' AND SERVERPROPERTY('ProductUpdateType') = 'CU'
   BEGIN
-    SET @Version = 16.010006
+    SET @Version = 16.01000
   END
 
   IF SERVERPROPERTY('EngineEdition') <> 5
@@ -5681,7 +5703,7 @@ BEGIN
     SELECT 'The value for the parameter @DatabaseOrder is not supported.', 16, 1
   END
 
-  IF @DatabaseOrder IN('DATABASE_LAST_GOOD_CHECK_ASC','DATABASE_LAST_GOOD_CHECK_DESC') AND NOT (@Version >= 14.0302916 OR (SERVERPROPERTY('EngineEdition') = 8 AND SERVERPROPERTY('ProductUpdateType') = 'Continuous'))
+  IF @DatabaseOrder IN('DATABASE_LAST_GOOD_CHECK_ASC','DATABASE_LAST_GOOD_CHECK_DESC') AND NOT (@Version >= 14.03029 OR (SERVERPROPERTY('EngineEdition') = 8 AND SERVERPROPERTY('ProductUpdateType') = 'Continuous'))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @DatabaseOrder is not supported. DATABASEPROPERTYEX(''DatabaseName'', ''LastGoodCheckDbTime'') is not available in this version of SQL Server.', 16, 2
@@ -6750,6 +6772,7 @@ ALTER PROCEDURE [dbo].[IndexOptimize]
 @OnlyModifiedStatistics nvarchar(max) = 'N',
 @StatisticsModificationLevel int = NULL,
 @StatisticsSample int = NULL,
+@StatisticsPersistSample nvarchar(max) = NULL,
 @StatisticsResample nvarchar(max) = 'N',
 @PartitionLevel nvarchar(max) = 'Y',
 @MSShippedObjects nvarchar(max) = 'N',
@@ -6777,7 +6800,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-31 16:59:43                                                               //--
+  --// Version: 2026-06-07 23:07:00                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6875,6 +6898,7 @@ BEGIN
   DECLARE @CurrentHasFilter bit
   DECLARE @CurrentNoRecompute bit
   DECLARE @CurrentIsIncremental bit
+  DECLARE @CurrentObjectRowCount bigint
   DECLARE @CurrentRowCount bigint
   DECLARE @CurrentModificationCounter bigint
   DECLARE @CurrentOnReadOnlyFileGroup bit
@@ -6886,6 +6910,7 @@ BEGIN
   DECLARE @CurrentMaxDOP int
   DECLARE @CurrentUpdateStatistics nvarchar(max)
   DECLARE @CurrentStatisticsSample int
+  DECLARE @CurrentStatisticsPersistSample nvarchar(max)
   DECLARE @CurrentStatisticsResample nvarchar(max)
   DECLARE @CurrentDelay datetime
 
@@ -6984,11 +7009,11 @@ BEGIN
 
   DECLARE @EmptyLine nvarchar(max) = CHAR(9)
 
-  DECLARE @Version numeric(18,10) = CAST(LEFT(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),CHARINDEX('.',CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))) - 1) + '.' + REPLACE(RIGHT(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)), LEN(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))) - CHARINDEX('.',CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)))),'.','') AS numeric(18,10))
+  DECLARE @Version numeric(18,10) = CAST(PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),4) + '.' + PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),3) + PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),2) AS numeric(18,10))
 
   IF SERVERPROPERTY('EngineEdition') = 8 AND SERVERPROPERTY('ProductVersion') = '12.0.2000.8' AND SERVERPROPERTY('ProductUpdateType') = 'CU'
   BEGIN
-    SET @Version = 16.010006
+    SET @Version = 16.01000
   END
 
   IF SERVERPROPERTY('EngineEdition') <> 5
@@ -7029,6 +7054,7 @@ BEGIN
   SET @Parameters += ', @OnlyModifiedStatistics = ' + ISNULL('''' + REPLACE(@OnlyModifiedStatistics,'''','''''') + '''','NULL')
   SET @Parameters += ', @StatisticsModificationLevel = ' + ISNULL(CAST(@StatisticsModificationLevel AS nvarchar(max)),'NULL')
   SET @Parameters += ', @StatisticsSample = ' + ISNULL(CAST(@StatisticsSample AS nvarchar(max)),'NULL')
+  SET @Parameters += ', @StatisticsPersistSample = ' + ISNULL('''' + REPLACE(@StatisticsPersistSample,'''','''''') + '''','NULL')
   SET @Parameters += ', @StatisticsResample = ' + ISNULL('''' + REPLACE(@StatisticsResample,'''','''''') + '''','NULL')
   SET @Parameters += ', @PartitionLevel = ' + ISNULL('''' + REPLACE(@PartitionLevel,'''','''''') + '''','NULL')
   SET @Parameters += ', @MSShippedObjects = ' + ISNULL('''' + REPLACE(@MSShippedObjects,'''','''''') + '''','NULL')
@@ -7668,6 +7694,32 @@ BEGIN
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @StatisticsSample is not supported.', 16, 1
+  END
+
+  ----------------------------------------------------------------------------------------------------
+
+  IF @StatisticsPersistSample NOT IN('Y','N')
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @StatisticsPersistSample is not supported.', 16, 1
+  END
+
+  IF @StatisticsPersistSample IS NOT NULL AND @StatisticsSample IS NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The parameter @StatisticsPersistSample can only be used together with @StatisticsSample.', 16, 2
+  END
+
+  IF @StatisticsPersistSample IS NOT NULL AND @StatisticsResample = 'Y'
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The parameters @StatisticsPersistSample and @StatisticsResample cannot be used together.', 16, 3
+  END
+
+  IF @StatisticsPersistSample IS NOT NULL AND NOT (@Version >= 14.03006 OR SERVERPROPERTY('EngineEdition') = 5 OR (SERVERPROPERTY('EngineEdition') = 8 AND SERVERPROPERTY('ProductUpdateType') = 'Continuous'))
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @StatisticsPersistSample is not supported.', 16, 4
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8360,6 +8412,7 @@ BEGIN
           END
 
           SET @CurrentCommand = @CurrentCommand + ' WHERE objects.[type] IN(''U'',''V'')'
+                                                    + ' AND (tables.is_external = 0 OR tables.is_external IS NULL)'
                                                     + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END
                                                     + ' AND indexes.[type] IN(1,2,3,4,5,6,7)'
                                                     + ' AND indexes.is_disabled = 0 AND indexes.is_hypothetical = 0'
@@ -8415,6 +8468,7 @@ BEGIN
 
           SET @CurrentCommand = @CurrentCommand + ' WHERE objects.[type] IN(''U'',''V'')'
                                                     + ' AND (tables.is_memory_optimized = 0 OR tables.is_memory_optimized IS NULL)'
+                                                    + ' AND (tables.is_external = 0 OR tables.is_external IS NULL)'
                                                     + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END
                                                     + ' AND NOT EXISTS(SELECT * FROM sys.indexes indexes WHERE indexes.[object_id] = stats.[object_id] AND indexes.index_id = stats.stats_id)'
                                                     + ' AND NOT EXISTS(SELECT * FROM sys.indexes indexes2 WHERE indexes2.[object_id] = stats.[object_id] AND indexes2.type = 1 AND indexes2.is_disabled = 1)'
@@ -8664,6 +8718,37 @@ BEGIN
           END CATCH
         END
 
+        -- What is the object row count?
+        IF @CurrentStatisticsID IS NOT NULL AND @UpdateStatistics IS NOT NULL
+        BEGIN
+          SET @CurrentCommand = ''
+          IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar(max)) + '; '
+
+          IF @PartitionLevelStatistics = 1 AND @CurrentIsIncremental = 1
+          BEGIN
+            SET @CurrentCommand += 'SELECT @ParamObjectRowCount = row_count FROM sys.dm_db_partition_stats WHERE [object_id] = @ParamObjectID AND index_id = (SELECT MIN(index_id) FROM sys.indexes WHERE [object_id] = @ParamObjectID) AND partition_number = @ParamPartitionNumber'
+          END
+          ELSE
+          BEGIN
+            SET @CurrentCommand += 'SELECT @ParamObjectRowCount = SUM(row_count) FROM sys.dm_db_partition_stats WHERE [object_id] = @ParamObjectID AND index_id = (SELECT MIN(index_id) FROM sys.indexes WHERE [object_id] = @ParamObjectID)'
+          END
+
+          BEGIN TRY
+            EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamObjectID int, @ParamPartitionNumber int, @ParamObjectRowCount bigint OUTPUT', @ParamObjectID = @CurrentObjectID, @ParamPartitionNumber = @CurrentPartitionNumber, @ParamObjectRowCount = @CurrentObjectRowCount OUTPUT
+          END TRY
+          BEGIN CATCH
+            SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar(max)) + ', ' + ISNULL(ERROR_MESSAGE(),'') + CASE WHEN ERROR_NUMBER() = 1222 THEN ' The object ' + QUOTENAME(@CurrentDatabaseName) + '.' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' is locked. The row count could not be checked.' ELSE '' END
+            SET @Severity = CASE WHEN ERROR_NUMBER() IN(1205,1222) THEN @LockMessageSeverity ELSE 16 END
+            RAISERROR('%s',@Severity,1,@ErrorMessage) WITH NOWAIT
+            RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+            IF NOT (ERROR_NUMBER() IN(1205,1222) AND @LockMessageSeverity = 10)
+            BEGIN
+              SET @ReturnCode = ERROR_NUMBER()
+            END
+            GOTO NoAction
+          END CATCH
+        END
+
         -- Has the data in the statistics been modified since the statistics was last updated?
         IF @CurrentStatisticsID IS NOT NULL AND @UpdateStatistics IS NOT NULL
         BEGIN
@@ -8813,7 +8898,7 @@ BEGIN
         -- Update statistics?
         IF @CurrentStatisticsID IS NOT NULL
         AND ((@UpdateStatistics = 'ALL' AND (@CurrentIndexType IN (1,2,3,4,7) OR @CurrentIndexID IS NULL)) OR (@UpdateStatistics = 'INDEX' AND @CurrentIndexID IS NOT NULL AND @CurrentIndexType IN (1,2,3,4,7)) OR (@UpdateStatistics = 'COLUMNS' AND @CurrentIndexID IS NULL))
-        AND ((@OnlyModifiedStatistics = 'N' AND @StatisticsModificationLevel IS NULL) OR (@OnlyModifiedStatistics = 'Y' AND @CurrentModificationCounter > 0) OR ((@CurrentModificationCounter * 1. / NULLIF(@CurrentRowCount,0)) * 100 >= @StatisticsModificationLevel) OR (@StatisticsModificationLevel IS NOT NULL AND @CurrentModificationCounter > 0 AND (@CurrentModificationCounter >= SQRT(@CurrentRowCount * 1000))) OR ((@CurrentIndexType IN (1,2) OR @CurrentIndexID IS NULL) AND @CurrentModificationCounter IS NULL))
+        AND ((@OnlyModifiedStatistics = 'N' AND @StatisticsModificationLevel IS NULL) OR (@OnlyModifiedStatistics = 'Y' AND @CurrentModificationCounter > 0) OR ((@CurrentModificationCounter * 1. / NULLIF(@CurrentRowCount,0)) * 100 >= @StatisticsModificationLevel) OR (@StatisticsModificationLevel IS NOT NULL AND @CurrentModificationCounter > 0 AND (@CurrentModificationCounter >= SQRT(@CurrentRowCount * 1000))) OR ((@CurrentIndexType IN (1,2) OR @CurrentIndexID IS NULL) AND @CurrentModificationCounter IS NULL AND @CurrentObjectRowCount > 0))
         AND ((@CurrentIsPartition = 0 AND (@CurrentAction NOT IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') OR @CurrentAction IS NULL)) OR (@CurrentIsPartition = 1 AND (@CurrentPartitionNumber = @CurrentPartitionCount OR (@PartitionLevelStatistics = 1 AND @CurrentIsIncremental = 1))))
         BEGIN
           SET @CurrentUpdateStatistics = 'Y'
@@ -8824,12 +8909,14 @@ BEGIN
         END
 
         SET @CurrentStatisticsSample = @StatisticsSample
+        SET @CurrentStatisticsPersistSample = @StatisticsPersistSample
         SET @CurrentStatisticsResample = @StatisticsResample
 
         -- Incremental statistics only supports RESAMPLE
         IF @PartitionLevelStatistics = 1 AND @CurrentIsIncremental = 1
         BEGIN
           SET @CurrentStatisticsSample = NULL
+          SET @CurrentStatisticsPersistSample = NULL
           SET @CurrentStatisticsResample = 'Y'
         END
 
@@ -8893,6 +8980,12 @@ BEGIN
             SELECT 'ONLINE = ON' + CASE WHEN @WaitAtLowPriorityMaxDuration IS NOT NULL THEN ' (WAIT_AT_LOW_PRIORITY (MAX_DURATION = ' + CAST(@WaitAtLowPriorityMaxDuration AS nvarchar(max)) + ', ABORT_AFTER_WAIT = ' + UPPER(@WaitAtLowPriorityAbortAfterWait) + '))' ELSE '' END
           END
 
+          IF @CurrentAction = 'INDEX_REBUILD_ONLINE' AND @CurrentResumableIndexOperation = 1 AND @WaitAtLowPriorityMaxDuration IS NOT NULL
+          BEGIN
+            INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
+            SELECT 'WAIT_AT_LOW_PRIORITY (MAX_DURATION = ' + CAST(@WaitAtLowPriorityMaxDuration AS nvarchar(max)) + ', ABORT_AFTER_WAIT = ' + UPPER(@WaitAtLowPriorityAbortAfterWait) + ')'
+          END
+
           IF @CurrentAction = 'INDEX_REBUILD_OFFLINE' AND @CurrentResumableIndexOperation = 0
           BEGIN
             INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
@@ -8923,10 +9016,10 @@ BEGIN
             SELECT CASE WHEN @Resumable = 'Y' AND @CurrentIndexType IN(1,2) AND @CurrentIsComputed = 0 AND @CurrentIsClusteredIndexComputed = 0 AND @CurrentIsTimestamp = 0 AND @CurrentHasFilter = 0 THEN 'RESUMABLE = ON' ELSE 'RESUMABLE = OFF' END
           END
 
-          IF @CurrentAction = 'INDEX_REBUILD_ONLINE' AND @Resumable = 'Y'  AND @CurrentIndexType IN(1,2) AND @CurrentIsComputed = 0 AND @CurrentIsClusteredIndexComputed = 0 AND @CurrentIsTimestamp = 0 AND @CurrentHasFilter = 0 AND @TimeLimit IS NOT NULL
+          IF @CurrentAction = 'INDEX_REBUILD_ONLINE' AND ((@Resumable = 'Y' AND @CurrentIndexType IN(1,2) AND @CurrentIsComputed = 0 AND @CurrentIsClusteredIndexComputed = 0 AND @CurrentIsTimestamp = 0 AND @CurrentHasFilter = 0) OR @CurrentResumableIndexOperation = 1) AND @TimeLimit IS NOT NULL
           BEGIN
             INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
-            SELECT 'MAX_DURATION = ' + CAST(DATEDIFF(MINUTE,SYSDATETIME(),DATEADD(SECOND,@TimeLimit,@StartTime)) AS nvarchar(max))
+            SELECT 'MAX_DURATION = ' + CAST(CASE WHEN DATEDIFF(MINUTE,SYSDATETIME(),DATEADD(SECOND,@TimeLimit,@StartTime)) < 1 THEN 1 ELSE DATEDIFF(MINUTE,SYSDATETIME(),DATEADD(SECOND,@TimeLimit,@StartTime)) END AS nvarchar(max))
           END
 
           IF @CurrentAction IN('INDEX_REORGANIZE') AND @LOBCompaction = 'Y'
@@ -8990,7 +9083,7 @@ BEGIN
           IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar(max)) + '; '
           SET @CurrentCommand += 'UPDATE STATISTICS ' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' ' + QUOTENAME(@CurrentStatisticsName)
 
-          IF @CurrentMaxDOP IS NOT NULL AND (@Version >= 14.030154 OR SERVERPROPERTY('EngineEdition') = 5 OR (SERVERPROPERTY('EngineEdition') = 8 AND SERVERPROPERTY('ProductUpdateType') = 'Continuous'))
+          IF @CurrentMaxDOP IS NOT NULL AND (@Version >= 14.03015 OR SERVERPROPERTY('EngineEdition') = 5 OR (SERVERPROPERTY('EngineEdition') = 8 AND SERVERPROPERTY('ProductUpdateType') = 'Continuous'))
           BEGIN
             INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
             SELECT 'MAXDOP = ' + CAST(@CurrentMaxDOP AS nvarchar(max))
@@ -9006,6 +9099,18 @@ BEGIN
           BEGIN
             INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
             SELECT 'SAMPLE ' + CAST(@CurrentStatisticsSample AS nvarchar(max)) + ' PERCENT'
+          END
+
+          IF @CurrentStatisticsPersistSample = 'Y'
+          BEGIN
+            INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
+            SELECT 'PERSIST_SAMPLE_PERCENT = ON'
+          END
+
+          IF @CurrentStatisticsPersistSample = 'N'
+          BEGIN
+            INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
+            SELECT 'PERSIST_SAMPLE_PERCENT = OFF'
           END
 
           IF @CurrentNoRecompute = 1
@@ -9085,6 +9190,7 @@ BEGIN
         SET @CurrentHasFilter = NULL
         SET @CurrentNoRecompute = NULL
         SET @CurrentIsIncremental = NULL
+        SET @CurrentObjectRowCount = NULL
         SET @CurrentRowCount = NULL
         SET @CurrentModificationCounter = NULL
         SET @CurrentOnReadOnlyFileGroup = NULL
@@ -9096,6 +9202,7 @@ BEGIN
         SET @CurrentMaxDOP = NULL
         SET @CurrentUpdateStatistics = NULL
         SET @CurrentStatisticsSample = NULL
+        SET @CurrentStatisticsPersistSample = NULL
         SET @CurrentStatisticsResample = NULL
 
         DELETE FROM @CurrentActionsAllowed
@@ -9234,7 +9341,7 @@ BEGIN
   DECLARE @CurrentJobStepDatabaseName nvarchar(max)
   DECLARE @CurrentOutputFileName nvarchar(max)
 
-  DECLARE @Version numeric(18,10) = CAST(LEFT(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),CHARINDEX('.',CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))) - 1) + '.' + REPLACE(RIGHT(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)), LEN(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))) - CHARINDEX('.',CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)))),'.','') AS numeric(18,10))
+  DECLARE @Version numeric(18,10) = CAST(PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),4) + '.' + PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),3) + PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),2) AS numeric(18,10))
 
   DECLARE @AmazonRDS bit = CASE WHEN SERVERPROPERTY('EngineEdition') IN (5, 8) THEN 0 WHEN EXISTS (SELECT * FROM sys.databases WHERE [name] = 'rdsadmin') AND SUSER_SNAME(0x01) = 'rdsa' THEN 1 ELSE 0 END
 
