@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-06-07 23:07:00
+Version: 2026-06-16 20:02:59
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -139,7 +139,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-07 23:07:00                                                               //--
+  --// Version: 2026-06-16 20:02:59                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -498,7 +498,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-07 23:07:00                                                               //--
+  --// Version: 2026-06-16 20:02:59                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1662,7 +1662,7 @@ BEGIN
   END
 
   IF @Compress = 'Y' AND @BackupSoftware IS NULL
-  AND NOT (SERVERPROPERTY('EngineEdition') IN (3, 8) OR SERVERPROPERTY('EditionID') IN (-1534726760, 284895786, -1785266663))
+  AND NOT (SERVERPROPERTY('EngineEdition') IN (3, 8) OR SERVERPROPERTY('EditionID') IN (-1534726760, -1785266663))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @Compress is not supported. Backup compression is not supported in this edition of SQL Server.', 16, 2
@@ -1746,6 +1746,12 @@ BEGIN
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @ChangeBackupType is not supported.', 16, 1
+  END
+
+  IF @ChangeBackupType = 'Y' AND NOT @BackupType IN ('DIFF', 'LOG')
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'Setting @ChangeBackupType to ''Y'' is only supported with differential and log backups.', 16, 2
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2076,7 +2082,7 @@ BEGIN
     SELECT 'The value for the parameter @Encrypt is not supported.', 16, 1
   END
 
-  IF @Encrypt = 'Y' AND @BackupSoftware IS NULL AND NOT (SERVERPROPERTY('EngineEdition') IN(3, 8) OR SERVERPROPERTY('EditionID') IN(-1534726760, 284895786, -1785266663))
+  IF @Encrypt = 'Y' AND @BackupSoftware IS NULL AND NOT (SERVERPROPERTY('EngineEdition') IN(3, 8) OR SERVERPROPERTY('EditionID') IN(-1534726760, -1785266663))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @Encrypt is not supported.', 16, 2
@@ -2781,7 +2787,7 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
-  IF @StringDelimiter IS NULL OR LEN(@StringDelimiter) > 1
+  IF @StringDelimiter IS NULL OR LEN(@StringDelimiter) <> 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @StringDelimiter is not supported.', 16, 1
@@ -3268,7 +3274,9 @@ BEGIN
       WHERE database_id = DB_ID(@CurrentDatabaseName)
     END
 
-    IF @CurrentDatabaseState = 'ONLINE' AND NOT (@CurrentInStandby = 1)
+    IF @CurrentDatabaseState = 'ONLINE'
+    AND NOT @CurrentUserAccess = 'SINGLE_USER'
+    AND NOT @CurrentInStandby = 1
     AND (@CurrentAvailabilityGroupRole = 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL)
     AND (@CurrentDistributedAvailabilityGroupRole = 'PRIMARY' OR @CurrentDistributedAvailabilityGroupRole IS NULL)
     AND (@BackupType IN('DIFF','FULL') OR (@ChangeBackupType = 'Y' AND @CurrentBackupType = 'LOG' AND @CurrentRecoveryModel IN('FULL','BULK_LOGGED') AND @CurrentLogLSN IS NULL AND NOT (@CurrentDatabaseName = 'master' AND @ContainedAvailabilityGroupListenerConnection = 0)))
@@ -3513,8 +3521,8 @@ BEGIN
         IF @CurrentAvailabilityGroup IS NULL SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{AvailabilityGroupName}','')
         IF SERVERPROPERTY('InstanceName') IS NULL SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{InstanceName}','')
         IF @@SERVICENAME IS NULL SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{ServiceName}','')
-        IF @Description IS NULL SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Description}','')
-        IF @BackupSetName IS NULL SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{BackupSetName}','')
+        IF @Description IS NULL OR LTRIM(RTRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@Description,'\',''),'/',''),':',''),'*',''),'?',''),'"',''),'<',''),'>',''),'|',''))) = '' SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Description}','')
+        IF @BackupSetName IS NULL OR LTRIM(RTRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@BackupSetName,'\',''),'/',''),':',''),'*',''),'?',''),'"',''),'<',''),'>',''),'|',''))) = '' SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{BackupSetName}','')
 
         IF @Directory IS NULL AND @MirrorDirectory IS NULL AND @URL IS NULL AND @DefaultDirectory LIKE '%' + '.' + @@SERVICENAME + @DirectorySeparator + 'MSSQL' + @DirectorySeparator + 'Backup'
         BEGIN
@@ -3662,7 +3670,7 @@ BEGIN
 
         -- Directory structure - replace tokens with real values
         SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{DirectorySeparator}',@DirectorySeparator)
-        SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{ServerName}',CASE WHEN SERVERPROPERTY('EngineEdition') = 8 THEN LEFT(CAST(SERVERPROPERTY('ServerName') AS nvarchar(max)),CHARINDEX('.',CAST(SERVERPROPERTY('ServerName') AS nvarchar(max))) - 1) ELSE CAST(SERVERPROPERTY('MachineName') AS nvarchar(max)) END)
+        SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{ServerName}',CASE WHEN SERVERPROPERTY('EngineEdition') = 8 AND CHARINDEX('.',CAST(SERVERPROPERTY('ServerName') AS nvarchar(max))) > 0 THEN LEFT(CAST(SERVERPROPERTY('ServerName') AS nvarchar(max)),CHARINDEX('.',CAST(SERVERPROPERTY('ServerName') AS nvarchar(max))) - 1) ELSE CAST(SERVERPROPERTY('MachineName') AS nvarchar(max)) END)
         SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{InstanceName}',ISNULL(CAST(SERVERPROPERTY('InstanceName') AS nvarchar(max)),''))
         SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{ServiceName}',ISNULL(@@SERVICENAME,''))
         SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{ClusterName}',ISNULL(@Cluster,''))
@@ -3723,8 +3731,8 @@ BEGIN
       IF @CurrentAvailabilityGroup IS NULL SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{AvailabilityGroupName}','')
       IF SERVERPROPERTY('InstanceName') IS NULL SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{InstanceName}','')
       IF @@SERVICENAME IS NULL SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{ServiceName}','')
-      IF @Description IS NULL SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Description}','')
-      IF @BackupSetName IS NULL SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{BackupSetName}','')
+      IF @Description IS NULL OR LTRIM(RTRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@Description,'\',''),'/',''),':',''),'*',''),'?',''),'"',''),'<',''),'>',''),'|',''))) = '' SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Description}','')
+      IF @BackupSetName IS NULL OR LTRIM(RTRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@BackupSetName,'\',''),'/',''),':',''),'*',''),'?',''),'"',''),'<',''),'>',''),'|',''))) = '' SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{BackupSetName}','')
       IF @CurrentNumberOfFiles = 1 SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{FileNumber}','')
       IF @CurrentNumberOfFiles = 1 SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{NumberOfFiles}','')
 
@@ -3827,7 +3835,7 @@ BEGIN
       END
 
       -- File name - replace tokens with real values
-      SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{ServerName}',CASE WHEN SERVERPROPERTY('EngineEdition') = 8 THEN LEFT(CAST(SERVERPROPERTY('ServerName') AS nvarchar(max)),CHARINDEX('.',CAST(SERVERPROPERTY('ServerName') AS nvarchar(max))) - 1) ELSE CAST(SERVERPROPERTY('MachineName') AS nvarchar(max)) END)
+      SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{ServerName}',CASE WHEN SERVERPROPERTY('EngineEdition') = 8 AND CHARINDEX('.',CAST(SERVERPROPERTY('ServerName') AS nvarchar(max))) > 0 THEN LEFT(CAST(SERVERPROPERTY('ServerName') AS nvarchar(max)),CHARINDEX('.',CAST(SERVERPROPERTY('ServerName') AS nvarchar(max))) - 1) ELSE CAST(SERVERPROPERTY('MachineName') AS nvarchar(max)) END)
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{InstanceName}',ISNULL(CAST(SERVERPROPERTY('InstanceName') AS nvarchar(max)),''))
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{ServiceName}',ISNULL(@@SERVICENAME,''))
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{ClusterName}',ISNULL(@Cluster,''))
@@ -3856,7 +3864,7 @@ BEGIN
       WHEN EXISTS (SELECT * FROM @CurrentDirectories) THEN (SELECT MAX(LEN(DirectoryPath + @DirectorySeparator)) FROM @CurrentDirectories)
       WHEN EXISTS (SELECT * FROM @CurrentURLs) THEN (SELECT MAX(LEN(DirectoryPath + @DirectorySeparator)) FROM @CurrentURLs)
       END
-      + LEN(REPLACE(REPLACE(@CurrentDatabaseFileName,'{DatabaseName}',@CurrentDatabaseNameFS), '{FileNumber}', CASE WHEN @CurrentNumberOfFiles >= 1 AND @CurrentNumberOfFiles <= 9 THEN '1' WHEN @CurrentNumberOfFiles >= 10 THEN '01' END))
+      + LEN(REPLACE(REPLACE(@CurrentDatabaseFileName,'{DatabaseName}',@CurrentDatabaseNameFS), '{FileNumber}', CASE WHEN @CurrentNumberOfFiles >= 1 AND @CurrentNumberOfFiles <= 9 THEN '1' WHEN @CurrentNumberOfFiles >= 10 THEN '01' ELSE '' END))
 
       -- The maximum length of a backup device is 259 characters
       IF @CurrentMaxFilePathLength > 259
@@ -3888,7 +3896,7 @@ BEGIN
           AND @CurrentFileNumber <= DirectoryNumber * (SELECT @CurrentNumberOfFiles / COUNT(*) FROM @CurrentDirectories WHERE Mirror = 0)
           AND Mirror = 0
 
-          SET @CurrentFileName = REPLACE(@CurrentDatabaseFileName, '{FileNumber}', CASE WHEN @CurrentNumberOfFiles >= 1 AND @CurrentNumberOfFiles <= 9 THEN CAST(@CurrentFileNumber AS nvarchar(max)) WHEN @CurrentNumberOfFiles >= 10 THEN RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar(max)),2) END)
+          SET @CurrentFileName = REPLACE(@CurrentDatabaseFileName, '{FileNumber}', CASE WHEN @CurrentNumberOfFiles >= 1 AND @CurrentNumberOfFiles <= 9 THEN CAST(@CurrentFileNumber AS nvarchar(max)) WHEN @CurrentNumberOfFiles >= 10 THEN RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar(max)),2) ELSE '' END)
 
           IF @CurrentDirectoryPath = 'NUL'
           BEGIN
@@ -3925,7 +3933,7 @@ BEGIN
           AND @CurrentFileNumber <= DirectoryNumber * (SELECT @CurrentNumberOfFiles / COUNT(*) FROM @CurrentDirectories WHERE Mirror = 1)
           AND Mirror = 1
 
-          SET @CurrentFileName = REPLACE(@CurrentDatabaseFileName, '{FileNumber}', CASE WHEN @CurrentNumberOfFiles > 1 AND @CurrentNumberOfFiles <= 9 THEN CAST(@CurrentFileNumber AS nvarchar(max)) WHEN @CurrentNumberOfFiles >= 10 THEN RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar(max)),2) ELSE '' END)
+          SET @CurrentFileName = REPLACE(@CurrentDatabaseFileName, '{FileNumber}', CASE WHEN @CurrentNumberOfFiles >= 1 AND @CurrentNumberOfFiles <= 9 THEN CAST(@CurrentFileNumber AS nvarchar(max)) WHEN @CurrentNumberOfFiles >= 10 THEN RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar(max)),2) ELSE '' END)
 
           SET @CurrentFilePath = @CurrentDirectoryPath + @DirectorySeparator + @CurrentFileName
 
@@ -3955,7 +3963,7 @@ BEGIN
           AND @CurrentFileNumber <= DirectoryNumber * (SELECT @CurrentNumberOfFiles / COUNT(*) FROM @CurrentURLs WHERE Mirror = 0)
           AND Mirror = 0
 
-          SET @CurrentFileName = REPLACE(@CurrentDatabaseFileName, '{FileNumber}', CASE WHEN @CurrentNumberOfFiles > 1 AND @CurrentNumberOfFiles <= 9 THEN CAST(@CurrentFileNumber AS nvarchar(max)) WHEN @CurrentNumberOfFiles >= 10 THEN RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar(max)),2) ELSE '' END)
+          SET @CurrentFileName = REPLACE(@CurrentDatabaseFileName, '{FileNumber}', CASE WHEN @CurrentNumberOfFiles >= 1 AND @CurrentNumberOfFiles <= 9 THEN CAST(@CurrentFileNumber AS nvarchar(max)) WHEN @CurrentNumberOfFiles >= 10 THEN RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar(max)),2) ELSE '' END)
 
           SET @CurrentFilePath = @CurrentDirectoryPath + @DirectorySeparator + @CurrentFileName
 
@@ -3985,7 +3993,7 @@ BEGIN
           AND @CurrentFileNumber <= DirectoryNumber * (SELECT @CurrentNumberOfFiles / COUNT(*) FROM @CurrentURLs WHERE Mirror = 1)
           AND Mirror = 1
 
-          SET @CurrentFileName = REPLACE(@CurrentDatabaseFileName, '{FileNumber}', CASE WHEN @CurrentNumberOfFiles > 1 AND @CurrentNumberOfFiles <= 9 THEN CAST(@CurrentFileNumber AS nvarchar(max)) WHEN @CurrentNumberOfFiles >= 10 THEN RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar(max)),2) ELSE '' END)
+          SET @CurrentFileName = REPLACE(@CurrentDatabaseFileName, '{FileNumber}', CASE WHEN @CurrentNumberOfFiles >= 1 AND @CurrentNumberOfFiles <= 9 THEN CAST(@CurrentFileNumber AS nvarchar(max)) WHEN @CurrentNumberOfFiles >= 10 THEN RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar(max)),2) ELSE '' END)
 
           SET @CurrentFilePath = @CurrentDirectoryPath + @DirectorySeparator + @CurrentFileName
 
@@ -4125,7 +4133,7 @@ BEGIN
 
             SET @CurrentCommandType = 'xp_delete_file'
 
-            SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_delete_file 0, N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + @CurrentFileExtension + ''', ''' + CONVERT(nvarchar(19),@CurrentCleanupDate,126) + ''' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error deleting files.'', 16, 1)'
+            SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_delete_file 0, N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + REPLACE(@CurrentFileExtension,'''','''''') + ''', ''' + CONVERT(nvarchar(19),@CurrentCleanupDate,126) + ''' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error deleting files.'', 16, 1)'
           END
 
           IF @BackupSoftware = 'LITESPEED'
@@ -4134,7 +4142,7 @@ BEGIN
 
             SET @CurrentCommandType = 'xp_slssqlmaint'
 
-            SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_slssqlmaint N''-MAINTDEL -DELFOLDER "' + REPLACE(@CurrentDirectoryPath,'''','''''') + '" -DELEXTENSION "' + @CurrentFileExtension + '" -DELUNIT "' + CAST(DATEDIFF(mi,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar(max)) + '" -DELUNITTYPE "minutes" -DELUSEAGE'' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error deleting LiteSpeed backup files.'', 16, 1)'
+            SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_slssqlmaint N''-MAINTDEL -DELFOLDER "' + REPLACE(@CurrentDirectoryPath,'''','''''') + '" -DELEXTENSION "' + REPLACE(@CurrentFileExtension,'''','''''') + '" -DELUNIT "' + CAST(DATEDIFF(mi,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar(max)) + '" -DELUNITTYPE "minutes" -DELUSEAGE'' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error deleting LiteSpeed backup files.'', 16, 1)'
           END
 
           IF @BackupSoftware = 'SQLBACKUP'
@@ -4152,7 +4160,7 @@ BEGIN
 
             SET @CurrentCommandType = 'xp_ss_delete'
 
-            SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_ss_delete @filename = N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + '\*.' + @CurrentFileExtension + ''', @age = ''' + CAST(DATEDIFF(mi,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar(max)) + 'Minutes'' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error deleting SQLsafe backup files.'', 16, 1)'
+            SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_ss_delete @filename = N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + '\*.' + REPLACE(@CurrentFileExtension,'''','''''') + ''', @age = ''' + CAST(DATEDIFF(mi,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar(max)) + 'Minutes'' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error deleting SQLsafe backup files.'', 16, 1)'
           END
 
           EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @EncryptionKey = @EncryptionKey, @EncryptionKeyPlaceholder = @EncryptionKeyPlaceholder, @LogToTable = @LogToTable, @Execute = @Execute
@@ -4420,7 +4428,7 @@ BEGIN
           IF @DataDomainBoostNoOutputTable = 'Y' SET @CurrentCommand += 'INSERT INTO @DataDomainBoostOutput ([Message]) '
           SET @CurrentCommand += 'EXECUTE @ReturnCode = dbo.emc_run_backup '''
 
-          SET @CurrentCommand += ' -c ' + CASE WHEN @Cluster IS NOT NULL AND @CurrentAvailabilityGroup IS NOT NULL THEN @Cluster ELSE CAST(SERVERPROPERTY('MachineName') AS nvarchar(max)) END
+          SET @CurrentCommand += ' -c ' + CASE WHEN @Cluster IS NOT NULL AND @CurrentAvailabilityGroup IS NOT NULL THEN REPLACE(@Cluster,'''','''''') ELSE REPLACE(CAST(SERVERPROPERTY('MachineName') AS nvarchar(max)),'''','''''') END
 
           SET @CurrentCommand += ' -l ' + CASE
           WHEN @CurrentBackupType = 'FULL' THEN 'full'
@@ -4648,7 +4656,7 @@ BEGIN
 
             SET @CurrentCommandType = 'xp_delete_file'
 
-            SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_delete_file 0, N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + @CurrentFileExtension + ''', ''' + CONVERT(nvarchar(19),@CurrentCleanupDate,126) + ''' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error deleting files.'', 16, 1)'
+            SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_delete_file 0, N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + REPLACE(@CurrentFileExtension,'''','''''') + ''', ''' + CONVERT(nvarchar(19),@CurrentCleanupDate,126) + ''' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error deleting files.'', 16, 1)'
           END
 
           IF @BackupSoftware = 'LITESPEED'
@@ -4657,7 +4665,7 @@ BEGIN
 
             SET @CurrentCommandType = 'xp_slssqlmaint'
 
-            SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_slssqlmaint N''-MAINTDEL -DELFOLDER "' + REPLACE(@CurrentDirectoryPath,'''','''''') + '" -DELEXTENSION "' + @CurrentFileExtension + '" -DELUNIT "' + CAST(DATEDIFF(mi,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar(max)) + '" -DELUNITTYPE "minutes" -DELUSEAGE'' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error deleting LiteSpeed backup files.'', 16, 1)'
+            SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_slssqlmaint N''-MAINTDEL -DELFOLDER "' + REPLACE(@CurrentDirectoryPath,'''','''''') + '" -DELEXTENSION "' + REPLACE(@CurrentFileExtension,'''','''''') + '" -DELUNIT "' + CAST(DATEDIFF(mi,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar(max)) + '" -DELUNITTYPE "minutes" -DELUSEAGE'' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error deleting LiteSpeed backup files.'', 16, 1)'
           END
 
           IF @BackupSoftware = 'SQLBACKUP'
@@ -4675,7 +4683,7 @@ BEGIN
 
             SET @CurrentCommandType = 'xp_ss_delete'
 
-            SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_ss_delete @filename = N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + '\*.' + @CurrentFileExtension + ''', @age = ''' + CAST(DATEDIFF(mi,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar(max)) + 'Minutes'' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error deleting SQLsafe backup files.'', 16, 1)'
+            SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_ss_delete @filename = N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + '\*.' + REPLACE(@CurrentFileExtension,'''','''''') + ''', @age = ''' + CAST(DATEDIFF(mi,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar(max)) + 'Minutes'' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error deleting SQLsafe backup files.'', 16, 1)'
           END
 
           EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @EncryptionKey = @EncryptionKey, @EncryptionKeyPlaceholder = @EncryptionKeyPlaceholder, @LogToTable = @LogToTable, @Execute = @Execute
@@ -4850,7 +4858,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-07 23:07:00                                                               //--
+  --// Version: 2026-06-16 20:02:59                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -5681,7 +5689,7 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
-  IF @LockMessageSeverity NOT IN(10, 16)
+  IF @LockMessageSeverity NOT IN(10, 16) OR @LockMessageSeverity IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @LockMessageSeverity is not supported.', 16, 1
@@ -5689,7 +5697,7 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
-  IF @StringDelimiter IS NULL OR LEN(@StringDelimiter) > 1
+  IF @StringDelimiter IS NULL OR LEN(@StringDelimiter) <> 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @StringDelimiter is not supported.', 16, 1
@@ -6606,7 +6614,7 @@ BEGIN
 
             SET @CurrentCommand = ''
             IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar(max)) + '; '
-            SET @CurrentCommand += 'DBCC CHECKTABLE (N' + QUOTENAME(QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName),'''')
+            SET @CurrentCommand += 'DBCC CHECKTABLE (N''' + REPLACE(QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName),'''','''''') + ''''
             IF @NoIndex = 'Y' SET @CurrentCommand += ', NOINDEX'
             SET @CurrentCommand += ') WITH ALL_ERRORMSGS'
             IF @DataPurity = 'Y' SET @CurrentCommand += ', DATA_PURITY'
@@ -6767,6 +6775,10 @@ ALTER PROCEDURE [dbo].[IndexOptimize]
 @MaxDOP int = NULL,
 @FillFactor int = NULL,
 @PadIndex nvarchar(max) = NULL,
+@DataCompression nvarchar(max) = NULL,
+@WaitAtLowPriorityMaxDuration int = NULL,
+@WaitAtLowPriorityAbortAfterWait nvarchar(max) = NULL,
+@Resumable nvarchar(max) = 'N',
 @LOBCompaction nvarchar(max) = 'Y',
 @UpdateStatistics nvarchar(max) = NULL,
 @OnlyModifiedStatistics nvarchar(max) = 'N',
@@ -6779,9 +6791,6 @@ ALTER PROCEDURE [dbo].[IndexOptimize]
 @Indexes nvarchar(max) = NULL,
 @TimeLimit int = NULL,
 @Delay int = NULL,
-@WaitAtLowPriorityMaxDuration int = NULL,
-@WaitAtLowPriorityAbortAfterWait nvarchar(max) = NULL,
-@Resumable nvarchar(max) = 'N',
 @AvailabilityGroups nvarchar(max) = NULL,
 @LockTimeout int = NULL,
 @LockMessageSeverity int = 16,
@@ -6800,7 +6809,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-07 23:07:00                                                               //--
+  --// Version: 2026-06-16 20:02:59                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -7049,6 +7058,10 @@ BEGIN
   SET @Parameters += ', @MaxDOP = ' + ISNULL(CAST(@MaxDOP AS nvarchar(max)),'NULL')
   SET @Parameters += ', @FillFactor = ' + ISNULL(CAST(@FillFactor AS nvarchar(max)),'NULL')
   SET @Parameters += ', @PadIndex = ' + ISNULL('''' + REPLACE(@PadIndex,'''','''''') + '''','NULL')
+  SET @Parameters += ', @DataCompression = ' + ISNULL('''' + REPLACE(@DataCompression,'''','''''') + '''','NULL')
+  SET @Parameters += ', @WaitAtLowPriorityMaxDuration = ' + ISNULL(CAST(@WaitAtLowPriorityMaxDuration AS nvarchar(max)),'NULL')
+  SET @Parameters += ', @WaitAtLowPriorityAbortAfterWait = ' + ISNULL('''' + REPLACE(@WaitAtLowPriorityAbortAfterWait,'''','''''') + '''','NULL')
+  SET @Parameters += ', @Resumable = ' + ISNULL('''' + REPLACE(@Resumable,'''','''''') + '''','NULL')
   SET @Parameters += ', @LOBCompaction = ' + ISNULL('''' + REPLACE(@LOBCompaction,'''','''''') + '''','NULL')
   SET @Parameters += ', @UpdateStatistics = ' + ISNULL('''' + REPLACE(@UpdateStatistics,'''','''''') + '''','NULL')
   SET @Parameters += ', @OnlyModifiedStatistics = ' + ISNULL('''' + REPLACE(@OnlyModifiedStatistics,'''','''''') + '''','NULL')
@@ -7061,9 +7074,6 @@ BEGIN
   SET @Parameters += ', @Indexes = ' + ISNULL('''' + REPLACE(@Indexes,'''','''''') + '''','NULL')
   SET @Parameters += ', @TimeLimit = ' + ISNULL(CAST(@TimeLimit AS nvarchar(max)),'NULL')
   SET @Parameters += ', @Delay = ' + ISNULL(CAST(@Delay AS nvarchar(max)),'NULL')
-  SET @Parameters += ', @WaitAtLowPriorityMaxDuration = ' + ISNULL(CAST(@WaitAtLowPriorityMaxDuration AS nvarchar(max)),'NULL')
-  SET @Parameters += ', @WaitAtLowPriorityAbortAfterWait = ' + ISNULL('''' + REPLACE(@WaitAtLowPriorityAbortAfterWait,'''','''''') + '''','NULL')
-  SET @Parameters += ', @Resumable = ' + ISNULL('''' + REPLACE(@Resumable,'''','''''') + '''','NULL')
   SET @Parameters += ', @AvailabilityGroups = ' + ISNULL('''' + REPLACE(@AvailabilityGroups,'''','''''') + '''','NULL')
   SET @Parameters += ', @LockTimeout = ' + ISNULL(CAST(@LockTimeout AS nvarchar(max)),'NULL')
   SET @Parameters += ', @LockMessageSeverity = ' + ISNULL(CAST(@LockMessageSeverity AS nvarchar(max)),'NULL')
@@ -7650,6 +7660,52 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
+  IF @DataCompression NOT IN('NONE', 'PAGE', 'ROW')
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @DataCompression is not supported.', 16, 1
+  END
+
+  ----------------------------------------------------------------------------------------------------
+
+  IF @WaitAtLowPriorityMaxDuration < 0
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @WaitAtLowPriorityMaxDuration is not supported.', 16, 1
+  END
+
+  ----------------------------------------------------------------------------------------------------
+
+  IF @WaitAtLowPriorityAbortAfterWait NOT IN('NONE','SELF','BLOCKERS')
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @WaitAtLowPriorityAbortAfterWait is not supported.', 16, 1
+  END
+
+  ----------------------------------------------------------------------------------------------------
+
+  IF (@WaitAtLowPriorityAbortAfterWait IS NOT NULL AND @WaitAtLowPriorityMaxDuration IS NULL) OR (@WaitAtLowPriorityAbortAfterWait IS NULL AND @WaitAtLowPriorityMaxDuration IS NOT NULL)
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The parameters @WaitAtLowPriorityMaxDuration and @WaitAtLowPriorityAbortAfterWait can only be used together.', 16, 1
+  END
+
+  ----------------------------------------------------------------------------------------------------
+
+  IF @Resumable NOT IN('Y','N') OR @Resumable IS NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @Resumable is not supported.', 16, 1
+  END
+
+  IF @Resumable = 'Y' AND @SortInTempdb = 'Y'
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'You can only specify one of the parameters @Resumable and @SortInTempdb.', 16, 3
+  END
+
+  ----------------------------------------------------------------------------------------------------
+
   IF @LOBCompaction NOT IN('Y','N') OR @LOBCompaction IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
@@ -7784,44 +7840,6 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
-  IF @WaitAtLowPriorityMaxDuration < 0
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @WaitAtLowPriorityMaxDuration is not supported.', 16, 1
-  END
-
-  ----------------------------------------------------------------------------------------------------
-
-  IF @WaitAtLowPriorityAbortAfterWait NOT IN('NONE','SELF','BLOCKERS')
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @WaitAtLowPriorityAbortAfterWait is not supported.', 16, 1
-  END
-
-  ----------------------------------------------------------------------------------------------------
-
-  IF (@WaitAtLowPriorityAbortAfterWait IS NOT NULL AND @WaitAtLowPriorityMaxDuration IS NULL) OR (@WaitAtLowPriorityAbortAfterWait IS NULL AND @WaitAtLowPriorityMaxDuration IS NOT NULL)
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The parameters @WaitAtLowPriorityMaxDuration and @WaitAtLowPriorityAbortAfterWait can only be used together.', 16, 1
-  END
-
-  ----------------------------------------------------------------------------------------------------
-
-  IF @Resumable NOT IN('Y','N') OR @Resumable IS NULL
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Resumable is not supported.', 16, 1
-  END
-
-  IF @Resumable = 'Y' AND @SortInTempdb = 'Y'
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'You can only specify one of the parameters @Resumable and @SortInTempdb.', 16, 3
-  END
-
-  ----------------------------------------------------------------------------------------------------
-
   IF @LockTimeout < 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
@@ -7830,7 +7848,7 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
-  IF @LockMessageSeverity NOT IN(10, 16)
+  IF @LockMessageSeverity NOT IN(10, 16) OR @LockMessageSeverity IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @LockMessageSeverity is not supported.', 16, 1
@@ -7838,7 +7856,7 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
-  IF @StringDelimiter IS NULL OR LEN(@StringDelimiter) > 1
+  IF @StringDelimiter IS NULL OR LEN(@StringDelimiter) <> 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @StringDelimiter is not supported.', 16, 1
@@ -9004,22 +9022,28 @@ BEGIN
             SELECT 'FILLFACTOR = ' + CAST(@FillFactor AS nvarchar(max))
           END
 
-          IF @CurrentAction IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') AND @PadIndex = 'Y' AND @CurrentIsPartition = 0 AND @CurrentIndexType IN(1,2,3,4) AND @CurrentResumableIndexOperation = 0
+          IF @CurrentAction IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') AND @PadIndex IS NOT NULL AND @CurrentIsPartition = 0 AND @CurrentIndexType IN(1,2,3,4) AND @CurrentResumableIndexOperation = 0
           BEGIN
             INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
-            SELECT 'PAD_INDEX = ON'
+            SELECT 'PAD_INDEX = ' + CASE WHEN @PadIndex = 'Y' THEN 'ON' WHEN @PadIndex = 'N' THEN 'OFF' END
+          END
+
+          IF @CurrentAction IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') AND @DataCompression IS NOT NULL AND @CurrentIndexType IN(1,2,4) AND @CurrentResumableIndexOperation = 0
+          BEGIN
+            INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
+            SELECT 'DATA_COMPRESSION = ' + @DataCompression
           END
 
           IF @CurrentAction = 'INDEX_REBUILD_ONLINE' AND @CurrentResumableIndexOperation = 0
           BEGIN
             INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
-            SELECT CASE WHEN @Resumable = 'Y' AND @CurrentIndexType IN(1,2) AND @CurrentIsComputed = 0 AND @CurrentIsClusteredIndexComputed = 0 AND @CurrentIsTimestamp = 0 AND @CurrentHasFilter = 0 THEN 'RESUMABLE = ON' ELSE 'RESUMABLE = OFF' END
+            SELECT CASE WHEN @Resumable = 'Y' AND @CurrentIndexType IN(1,2) AND @CurrentIsComputed = 0 AND @CurrentIsClusteredIndexComputed = 0 AND @CurrentIsTimestamp = 0 AND @CurrentHasFilter = 0 AND @CurrentHasClusteredColumnstore = 0 THEN 'RESUMABLE = ON' ELSE 'RESUMABLE = OFF' END
           END
 
-          IF @CurrentAction = 'INDEX_REBUILD_ONLINE' AND ((@Resumable = 'Y' AND @CurrentIndexType IN(1,2) AND @CurrentIsComputed = 0 AND @CurrentIsClusteredIndexComputed = 0 AND @CurrentIsTimestamp = 0 AND @CurrentHasFilter = 0) OR @CurrentResumableIndexOperation = 1) AND @TimeLimit IS NOT NULL
+          IF @CurrentAction = 'INDEX_REBUILD_ONLINE' AND ((@Resumable = 'Y' AND @CurrentIndexType IN(1,2) AND @CurrentIsComputed = 0 AND @CurrentIsClusteredIndexComputed = 0 AND @CurrentIsTimestamp = 0 AND @CurrentHasFilter = 0 AND @CurrentHasClusteredColumnstore = 0) OR @CurrentResumableIndexOperation = 1) AND @TimeLimit IS NOT NULL
           BEGIN
             INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
-            SELECT 'MAX_DURATION = ' + CAST(CASE WHEN DATEDIFF(MINUTE,SYSDATETIME(),DATEADD(SECOND,@TimeLimit,@StartTime)) < 1 THEN 1 ELSE DATEDIFF(MINUTE,SYSDATETIME(),DATEADD(SECOND,@TimeLimit,@StartTime)) END AS nvarchar(max))
+            SELECT 'MAX_DURATION = ' + CAST(CASE WHEN DATEDIFF(MINUTE,SYSDATETIME(),DATEADD(SECOND,@TimeLimit,@StartTime)) < 1 THEN 1 WHEN DATEDIFF(MINUTE,SYSDATETIME(),DATEADD(SECOND,@TimeLimit,@StartTime)) > 10080 THEN 10080 ELSE DATEDIFF(MINUTE,SYSDATETIME(),DATEADD(SECOND,@TimeLimit,@StartTime)) END AS nvarchar(max))
           END
 
           IF @CurrentAction IN('INDEX_REORGANIZE') AND @LOBCompaction = 'Y'
@@ -9058,7 +9082,7 @@ BEGIN
         IF @CurrentStatisticsID IS NOT NULL
         BEGIN
           SET @CurrentComment = 'ObjectType: ' + CASE WHEN @CurrentObjectType = 'U' THEN 'Table' WHEN @CurrentObjectType = 'V' THEN 'View' ELSE 'N/A' END + ', '
-          SET @CurrentComment += 'IndexType: ' + CASE WHEN @CurrentIndexID IS NOT NULL THEN 'Index' ELSE 'Column' END + ', '
+          SET @CurrentComment += 'StatisticsType: ' + CASE WHEN @CurrentIndexID IS NOT NULL THEN 'Index' ELSE 'Column' END + ', '
           IF @CurrentIndexID IS NOT NULL SET @CurrentComment += 'IndexType: ' + CASE WHEN @CurrentIndexType = 1 THEN 'Clustered' WHEN @CurrentIndexType = 2 THEN 'NonClustered' WHEN @CurrentIndexType = 3 THEN 'XML' WHEN @CurrentIndexType = 4 THEN 'Spatial' WHEN @CurrentIndexType = 5 THEN 'Clustered Columnstore' WHEN @CurrentIndexType = 6 THEN 'NonClustered Columnstore' WHEN @CurrentIndexType = 7 THEN 'NonClustered Hash' ELSE 'N/A' END + ', '
           SET @CurrentComment += 'Incremental: ' + CASE WHEN @CurrentIsIncremental = 1 THEN 'Yes' WHEN @CurrentIsIncremental = 0 THEN 'No' ELSE 'N/A' END + ', '
           SET @CurrentComment += 'RowCount: ' + ISNULL(CAST(@CurrentRowCount AS nvarchar(max)),'N/A') + ', '
