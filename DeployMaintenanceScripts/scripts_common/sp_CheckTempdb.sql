@@ -23,8 +23,8 @@ DECLARE
 	, @VersionDate DATETIME = NULL
 
 SELECT
-    @Version = '2026.4.1'
-    , @VersionDate = '20260420';
+    @Version = '2026.6.1'
+    , @VersionDate = '20260612';
 
 /* Version check */
 IF @VersionCheck = 1 BEGIN
@@ -50,8 +50,7 @@ IF @Help = 1 BEGIN
     to troubleshoot.
     
     Known limitations of this version:
-    - sp_CheckTempdb only works Microsoft-supported versions of SQL Server, so 
-    that means SQL Server 2016 or later.
+    - sp_CheckTempdb is designed to work with SQL Server 2016 or later.
     - sp_CheckTempdb will work with some earlier versions of SQL Server, but it 
     will skip a few checks. The results should still be valid and helpful, but you
     should really consider upgrading to a newer version.
@@ -117,29 +116,39 @@ IF @Help = 1 BEGIN
 	RETURN;
 	END;  
 
-/* set some defaults */
-
-IF OBJECT_ID('tempdb..#Results') IS NOT NULL
-	DROP TABLE #Results;
-
-CREATE TABLE #Results (
-    CategoryID TINYINT
-	, CheckID INT
-    , [Importance] TINYINT
-	, CheckName VARCHAR(50)
-	, Issue NVARCHAR(MAX)
-	, DatabaseName NVARCHAR(255)
-	, Details NVARCHAR(MAX)
-	, ActionStep NVARCHAR(MAX)
-	, ReadMoreURL XML
-	);
-
 /* SQL Server version check */	
 DECLARE 
 	@SQL NVARCHAR(4000)
 	, @SQLVersion NVARCHAR(128)
 	, @SQLVersionMajor DECIMAL(10,2)
-	, @SQLVersionMinor DECIMAL(10,2);
+	, @SQLVersionMinor DECIMAL(10,2)
+    , @SQLEngine NVARCHAR(128)
+    , @AzureMITier NVARCHAR(128)
+    , @LogMaxPages BIGINT;
+
+SELECT @SQLEngine = CASE SERVERPROPERTY('EngineEdition')
+    WHEN 8 THEN 'Azure SQL Managed Instance'
+    WHEN 5 THEN 'Azure SQL Database'
+    WHEN 3 THEN 'SQL Server (Enterprise)'
+    WHEN 2 THEN 'SQL Server (Standard)'
+    WHEN 4 THEN 'SQL Server (Express)'
+    ELSE 'Other'
+    END;
+
+/* On Managed Instance, read the service tier */
+IF @SQLEngine = 'Azure SQL Managed Instance' BEGIN
+
+    SET @SQL = N'
+    SELECT TOP (1) @TierOut = sku
+    FROM sys.server_resource_stats
+    ORDER BY start_time DESC;';
+
+    EXEC sys.sp_executesql
+          @SQL
+        , N'@TierOut NVARCHAR(128) OUTPUT'
+        , @TierOut = @AzureMITier OUTPUT;
+
+    END;
 
 IF OBJECT_ID('tempdb..#SQLVersions') IS NOT NULL
 	DROP TABLE #SQLVersions;
@@ -163,12 +172,12 @@ VALUES
 SELECT @SQLVersion = CAST(SERVERPROPERTY('ProductVersion') AS NVARCHAR(128));
 
 SELECT 
-	@SQLVersionMajor = SUBSTRING(@SQLVersion, 1,CHARINDEX('.', @SQLVersion) + 1 )
+	@SQLVersionMajor = CONVERT(DECIMAL(10,2), LEFT(@SQLVersion, CHARINDEX('.', @SQLVersion) - 1))
 	, @SQLVersionMinor = PARSENAME(CONVERT(VARCHAR(32), @SQLVersion), 2);
 
 
-	/* check for unsupported version */	
-IF @SQLVersionMajor < 11 BEGIN
+/* check for unsupported version */	
+IF @SQLVersionMajor < 11 AND @SQLEngine <> 'Azure SQL Managed Instance' BEGIN
 	PRINT '
 /*
     *** Unsupported SQL Server Version ***
@@ -183,6 +192,61 @@ IF @SQLVersionMajor < 11 BEGIN
 */';
 	RETURN;
 	END; 
+
+/* work tables */
+IF OBJECT_ID('tempdb..#Category') IS NOT NULL
+	DROP TABLE #Category;
+
+CREATE TABLE #Category (
+    CategoryID TINYINT
+	, CategoryName VARCHAR(50)
+	);
+
+INSERT #Category (CategoryID, CategoryName)
+VALUES
+    (0, '')
+	, (1, 'Discovery')
+    , (2, 'Recoverability')
+    , (3, 'Security')
+    , (4, 'Availability')
+    , (5, 'Integrity')
+    , (6, 'Reliability')
+    , (7, 'Performance')
+    , (8, 'Troubleshooting');
+    
+IF OBJECT_ID('tempdb..#Results') IS NOT NULL
+	DROP TABLE #Results;
+
+CREATE TABLE #Results (
+    CategoryID TINYINT
+	, CheckID INT
+    , [Importance] TINYINT
+	, CheckName VARCHAR(50)
+	, Issue NVARCHAR(MAX)
+	, DatabaseName NVARCHAR(255)
+	, Details NVARCHAR(MAX)
+	, ActionStep NVARCHAR(MAX)
+	, ReadMoreURL XML
+	);
+
+INSERT #Results
+	SELECT
+		0
+		, 0
+		, 0
+		, 'sp_CheckTempdb'
+		, 'Provided by Straight Path IT Solutions, LLC'
+		, NULL
+		, '(Information captured on ' + CONVERT(VARCHAR(100), GETDATE(), 101) + ' using version ' + @Version + ')'
+		, 'Use this FREE tool to check your tempdb database for all sorts of issues!'
+		, 'https://straightpathsql.com/tool/sp_checktempdb/'
+
+
+/* set some defaults */
+SET @Size = UPPER(@Size);
+
+IF @Size NOT IN ('MB','GB')
+    SET @Size = 'MB';
 
 IF @UsagePercent > 100
     SET @UsagePercent = 100;
@@ -203,6 +267,12 @@ WHERE [type] = 0;
 
 SELECT @NumberOfCPUCores = cpu_count
 FROM sys.dm_os_sys_info;
+
+SET @LogMaxPages =
+    CASE
+        WHEN @AzureMITier = 'GeneralPurpose' THEN 15597568 /* 121,856 MB (~119 GB): GP tempdb log tier ceiling */
+        ELSE 268435456 /* 2 TB: Business Critical and on-prem log ceiling */
+    END;
 
 IF OBJECT_ID('tempdb..#TraceFlag') IS NOT NULL
     DROP TABLE #TraceFlag;
@@ -292,13 +362,13 @@ IF @Mode IN (2) BEGIN
 			FROM (
 				SELECT 
 					session_id
-				FROM tempdb.sys.dm_db_session_space_usage ss1 WITH (NOLOCK)
+				FROM tempdb.sys.dm_db_session_space_usage ss1
 				WHERE session_id <> @@SPID
 					AND (user_objects_alloc_page_count > 0 OR internal_objects_alloc_page_count > 0)
 				UNION
 				SELECT 
 					session_id
-				FROM tempdb.sys.dm_db_task_space_usage ts2 WITH (NOLOCK)
+				FROM tempdb.sys.dm_db_task_space_usage ts2
 				WHERE session_id <> @@SPID
 					AND (user_objects_alloc_page_count > 0 OR internal_objects_alloc_page_count > 0)
 				) u
@@ -397,13 +467,13 @@ IF @Mode IN (2) BEGIN
 			FROM (
 				SELECT 
 					session_id
-				FROM tempdb.sys.dm_db_session_space_usage ss1 WITH (NOLOCK)
+				FROM tempdb.sys.dm_db_session_space_usage ss1
 				WHERE session_id <> @@SPID
 					AND (user_objects_alloc_page_count > 0 OR internal_objects_alloc_page_count > 0)
 				UNION
 				SELECT 
 					session_id
-				FROM tempdb.sys.dm_db_task_space_usage ts2 WITH (NOLOCK)
+				FROM tempdb.sys.dm_db_task_space_usage ts2
 				WHERE session_id <> @@SPID
 					AND (user_objects_alloc_page_count > 0 OR internal_objects_alloc_page_count > 0)
 				) u
@@ -486,64 +556,63 @@ IF @Mode IN (2) BEGIN
 
 IF @Mode IN (3) BEGIN
 
-/* Check for version prior to SQL Server 2019 */
-    IF @SQLVersionMajor < 15 BEGIN
+    /* Runs only on SQL Server 2019 or later, or Azure Managed Instance */
+    IF @SQLEngine <> 'Azure SQL Managed Instance' AND @SQLVersionMajor < 15 BEGIN
         PRINT '
-/*
-    *** Unsupported SQL Server Version ***
+    /*
+        *** Unsupported SQL Server Version ***
 
-    @Mode = 3 is supported only for execution on SQL Server 2019 and later.
-
-	Sorry, but we can''t check for tempdb contention with this version.
-
-    *** EXECUTION ABORTED ***
-    	   
-*/';
-        RETURN;
-        END; 
-
-/* 
-Check for allocation or metadata contention in tempdb
-Query modified from original written by Haripriya Naidu: https://gohigh.substack.com/p/query-to-check-tempdb-contention
-*/
-    IF @SQLVersionMajor >= 15 BEGIN
-
-        SELECT 
-            er.session_id
-            , er.wait_type AS WaitType
-            , er.wait_resource AS WaitResource
-            , OBJECT_NAME(page_info.[object_id],page_info.database_id) AS ObjectName
-            , er.blocking_session_id AS BlockingSessionID
-    		, er.command AS Command
-            , SUBSTRING(st.text, (er.statement_start_offset/2)+1,   
-                ((CASE er.statement_end_offset  
-                      WHEN -1 THEN DATALENGTH(st.text)  
-                     ELSE er.statement_end_offset  
-                     END - er.statement_start_offset)/2) + 1) AS StatementText
-            , page_info.database_id AS DatabaseID
-            , page_info.[file_id] AS FileID
-            , page_info.page_id AS PageID
-            , page_info.[object_id] AS ObjectID
-            , page_info.index_id AS IndexID
-            , page_info.page_type_desc AS PageTypeDesc
-            , CASE 
-                WHEN page_info.page_type_desc IN('SGAM_PAGE','GAM_PAGE', 'PFS_PAGE') 
-                    AND wait_type IN ('PAGELATCH_SH','PAGELATCH_UP','PAGELATCH_EX')
-                    THEN 'ALLOCATION CONTENTION'
-                WHEN page_info.page_type_desc IN ('DATA_PAGE', 'INDEX_PAGE') 
-                    AND wait_type IN ('PAGELATCH_SH','PAGELATCH_UP','PAGELATCH_EX')
-                    THEN 'METADATA CONTENTION'
-                END AS AllocationType
-        FROM master.sys.dm_exec_requests AS er
-        CROSS APPLY master.sys.dm_exec_sql_text(er.sql_handle) AS st 
-        CROSS APPLY master.sys.fn_PageResCracker (er.page_resource) AS r /*database ID, file ID, page ID SQL2019*/
-        CROSS APPLY master.sys.dm_db_page_info(r.[db_id], r.[file_id], r.page_id, 'DETAILED') AS page_info /*replace dbcc page SQL2019*/
-        WHERE er.wait_type LIKE 'PAGELATCH%'
-            AND er.wait_resource LIKE '2:%';
+        @Mode = 3 is supported only for execution on SQL Server 2019 and later.
+	
+        Sorry, but we can''t check for tempdb contention with this version.
     
+        *** EXECUTION ABORTED *** 
+    */';
+        RETURN;
         END;
 
+    /* 
+    Check for allocation or metadata contention in tempdb
+    Query modified from original written by Haripriya Naidu: https://gohigh.substack.com/p/query-to-check-tempdb-contention
+    */
+    SET @SQL = N'
+    SELECT 
+        er.session_id
+        , er.wait_type AS WaitType
+        , er.wait_resource AS WaitResource
+        , OBJECT_NAME(page_info.[object_id],page_info.database_id) AS ObjectName
+        , er.blocking_session_id AS BlockingSessionID
+        , er.command AS Command
+        , SUBSTRING(st.text, (er.statement_start_offset/2)+1,
+            ((CASE er.statement_end_offset
+                    WHEN -1 THEN DATALENGTH(st.text)
+                    ELSE er.statement_end_offset
+                    END - er.statement_start_offset)/2) + 1) AS StatementText
+        , page_info.database_id AS DatabaseID
+        , page_info.[file_id] AS FileID
+        , page_info.page_id AS PageID
+        , page_info.[object_id] AS ObjectID
+        , page_info.index_id AS IndexID
+        , page_info.page_type_desc AS PageTypeDesc
+        , CASE 
+            WHEN page_info.page_type_desc IN (''SGAM_PAGE'',''GAM_PAGE'',''PFS_PAGE'') 
+                AND wait_type IN (''PAGELATCH_SH'',''PAGELATCH_UP'',''PAGELATCH_EX'')
+                THEN ''ALLOCATION CONTENTION''
+            WHEN page_info.page_type_desc IN (''DATA_PAGE'',''INDEX_PAGE'') 
+                AND wait_type IN (''PAGELATCH_SH'',''PAGELATCH_UP'',''PAGELATCH_EX'')
+                THEN ''METADATA CONTENTION''
+            END AS AllocationType
+    FROM master.sys.dm_exec_requests AS er
+    CROSS APPLY master.sys.dm_exec_sql_text(er.sql_handle) AS st 
+    CROSS APPLY master.sys.fn_PageResCracker (er.page_resource) AS r
+    CROSS APPLY master.sys.dm_db_page_info(r.[db_id], r.[file_id], r.page_id, ''DETAILED'') AS page_info
+    WHERE er.wait_type LIKE ''PAGELATCH%''
+        AND er.wait_resource LIKE ''2:%'';';
+
+    EXEC sys.sp_executesql @SQL;
+
     END;
+
 IF @Mode IN (0,99) BEGIN
 
 /* tempdb encrypted */
@@ -635,11 +704,14 @@ IF (
         , 'https://straightpathsql.com/check/tempdb-max-file-size'
     FROM tempdb.sys.database_files
     WHERE [growth] > 0
-        AND [max_size] NOT IN (0, -1);
+        AND [max_size] NOT IN (0, -1)
+        AND ( [type] = 0 /* data files: flag any max size set */
+            OR ([type] = 1 AND [max_size] < @LogMaxPages)  /* log files: flag only if below the tier ceiling */
+            );
 
 
 /* Number of data files not recommended */
-    IF @NumberOfCPUCores < 8 
+    IF @NumberOfCPUCores < 8 AND @SQLEngine <> 'Azure SQL Managed Instance'  /* Excluding Azure MI since it defaults to 12 data files */
     
             INSERT #Results
             SELECT
@@ -652,10 +724,9 @@ IF (
     			, 'Microsoft recommends having the same number of data files as CPU cores (up to 8) to reduce file contention.'
     			, 'Configure tempdb to have ' + CONVERT(VARCHAR(3), @NumberOfCPUCores) + ' evenly sized data files.'
     			, 'https://straightpathsql.com/check/tempdb-data-file-count'
-            WHERE @NumberOfDataFiles <> @NumberOfCPUCores
-                AND @NumberOfDataFiles <= 16;
+            WHERE @NumberOfDataFiles <> @NumberOfCPUCores;
     
-    IF @NumberOfCPUCores >= 8 
+    IF @NumberOfCPUCores >= 8 AND @SQLEngine <> 'Azure SQL Managed Instance'  /* Excluding Azure MI since it defaults to 12 data files */
     
             INSERT #Results
             SELECT
@@ -668,8 +739,7 @@ IF (
     			, 'Microsoft recommends having the same number of data files as CPU cores (up to 8) to reduce file contention.'
     			, 'If this configuration was not intentional, configure tempdb to have 8 evenly sized data files.'
     			, 'https://straightpathsql.com/check/tempdb-data-file-count'
-            WHERE @NumberOfDataFiles > 8
-                AND @NumberOfDataFiles <= 16;
+            WHERE @NumberOfDataFiles <> 8;
 
 /* number of data files exceeds Microsoft recommendations */
     IF @NumberOfDataFiles > 16
@@ -816,7 +886,7 @@ IF (
     WHERE ((CAST(FILEPROPERTY(name, 'SpaceUsed') AS INT) * 1.)/([size]* 1.) * 100) > @UsagePercent;
 
 /* Trace Flag 1117 and 1118 */
-    IF @SQLVersionMajor < 13 BEGIN
+    IF @SQLVersionMajor < 13  AND @SQLEngine <> 'Azure SQL Managed Instance' /* Excluding Azure MI */ BEGIN
     
         IF NOT EXISTS (SELECT * FROM #TraceFlag WHERE TraceFlag = '1117')    
                 INSERT #Results
@@ -917,28 +987,91 @@ IF (
     FROM #AvgStall
     WHERE AvgWriteStallMs > @AvgWriteStallMs;
 
+IF @SQLVersionMajor >= 17 BEGIN
+
+    /* Resource Governor limitations enabled for tempdb */
+    SET @SQL = N'
+        IF (SELECT is_enabled FROM sys.resource_governor_configuration) = 1
+            SELECT
+                7
+                , 727
+                , 2
+                , ''Resource Governor limits used for tempdb''
+                , ''The workload group ['' + wg.[name] + ''] in resource pool ['' + rp.[name] + ''] has a fixed limit of '' + CONVERT(VARCHAR(10), wg.[group_max_tempdb_data_mb]) + '' MB.''
+                , ''tempdb''
+                , ''Resource Governor limitations on tempdb can break legitimate workloads with error 1138.''
+                , ''Review any Resource Governor limits with your team to verify their purpose.''
+                , ''https://learn.microsoft.com/en-us/sql/relational-databases/resource-governor/tempdb-space-resource-governance?view=sql-server-ver17''
+            FROM sys.resource_governor_workload_groups AS wg
+            JOIN sys.resource_governor_resource_pools AS rp
+                ON wg.pool_id = rp.pool_id
+            WHERE wg.[group_max_tempdb_data_mb] IS NOT NULL;'
+
+	INSERT #Results
+	EXEC sp_executesql @SQL;
+
+    SET @SQL = N'
+        IF (SELECT is_enabled FROM sys.resource_governor_configuration) = 1
+            SELECT
+                7
+                , 727
+                , 2
+                , ''Resource Governor limits used for tempdb''
+                , ''The workload group ['' + wg.[name] + ''] in resource pool ['' + rp.[name] + ''] has a fixed limit of '' + CONVERT(VARCHAR(10), wg.[group_max_tempdb_data_percent]) + '' percent.''
+                , ''tempdb''
+                , ''Resource Governor limitations on tempdb can break legitimate workloads with error 1138.''
+                , ''Review any Resource Governor limits with your team to verify their purpose.''
+                , ''https://learn.microsoft.com/en-us/sql/relational-databases/resource-governor/tempdb-space-resource-governance?view=sql-server-ver17''
+            FROM sys.resource_governor_workload_groups AS wg
+            JOIN sys.resource_governor_resource_pools AS rp
+                ON wg.pool_id = rp.pool_id
+            WHERE wg.[group_max_tempdb_data_percent] IS NOT NULL;';
+
+	INSERT #Results
+	EXEC sp_executesql @SQL;
+
+    
+    /* Accelerated Database Recovery(ADR) for tempdb */
+    SET @SQL = N'
+    SELECT
+        7
+        , 739
+        , 2
+        , ''Accelerated Database Recovery''
+        , ''The tempdb database has Accelerated Database Recovery (ADR) enabled.''
+        , ''tempdb''
+        , ''ADR can improve performance for certain workloads, but for others it can create excessive overhead that affects performance.''
+        , ''Review the size of the Persistent Version Store (PSV) with your team to verify ADR is not doing more harm than good.''
+        , ''https://learn.microsoft.com/en-us/sql/relational-databases/accelerated-database-recovery-management?view=sql-server-ver17''
+    FROM sys.databases
+    WHERE database_id = 2
+        AND is_accelerated_database_recovery_on = 1;';
+
+	INSERT #Results
+    EXEC sys.sp_executesql @SQL;
+    
+    END;
+
 /* Return Results */	
 	SELECT
-	    CASE CategoryID
-            WHEN 6 THEN 'Reliability'
-		    WHEN 7 THEN 'Performance'
-		END AS Category
-        , CASE [Importance]
-            WHEN 1 THEN 'High'
-		    WHEN 2 THEN 'Medium'
-			ELSE 'Low'
-		END AS [Importance]
-        , CheckName
-        , Issue
-        , DatabaseName
-        , Details
-        , ActionStep
-        , ReadMoreURL
-    FROM #Results
-    ORDER BY
-        [Importance]
-		, Category
-		, CheckName;
+		r.Importance
+		, r.CheckName
+		, r.Issue
+		, r.DatabaseName
+		, r.Details
+		, r.ActionStep    
+		, r.ReadMoreURL
+		, r.CheckID
+	FROM #Results r
+	INNER JOIN #Category c
+		ON r.CategoryID = c.CategoryID
+	WHERE r.CategoryID <> 1
+	ORDER BY
+		r.Importance
+		, c.CategoryID
+		, r.CheckID
+		, r.Issue
+		, r.DatabaseName;
 
     END;
 

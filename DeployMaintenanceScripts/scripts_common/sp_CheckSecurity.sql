@@ -22,8 +22,8 @@ DECLARE
 	, @VersionDate DATETIME = NULL
 
 SELECT
-    @Version = '2026.4.1'
-    , @VersionDate = '20260420';
+    @Version = '2026.6.1'
+    , @VersionDate = '20260612';
 
 /* Version check */
 IF @VersionCheck = 1 BEGIN
@@ -43,20 +43,19 @@ IF @Help = 1 BEGIN
     sp_CheckSecurity from https://straightpathsql.com/
     	
     This script checks your SQL Server for several dozen possible vulnerabilities
-    and gives you an order list with explanations and action items.
+    and gives you an ordered list with explanations and action items.
     
     Known limitations of this version:
-    - sp_CheckSecurity only works Microsoft-supported versions of SQL Server, so 
-    that means SQL Server 2016 or later.
+    - sp_CheckSecurity only works on SQL Server 2016 or later.
     - sp_CheckSecurity will work with SQL Server 2012 and 2014, but it will skip
     a few checks. The results should still be valid and helpful, but you should
-    really considering upgrading to a newer version by now.
+    really consider upgrading to a newer version by now.
     - If you attempt to execute sp_CheckSecurity on SQL Server 2008 R2 or older,
     then you will only receive an output message saying this will not run on your
     version. I''m sorry. No really, I''m sorry you have to support a version of
     SQL Server that old.
     - sp_CheckSecurity is designed only for database administrators, so the user
-    must be a member of the sysadmin role to complete the checks.
+    must be a member of the sysadmin role to complete these checks.
     - If a database name has a question mark in it, then certain checks will fail
     due to the usage of sp_MSforeachdb.
     
@@ -175,6 +174,26 @@ DECLARE
 	, @InstanceName NVARCHAR(128)
 	, @Edition NVARCHAR(128);
 
+IF OBJECT_ID('tempdb..#Category') IS NOT NULL
+	DROP TABLE #Category;
+
+CREATE TABLE #Category (
+    CategoryID TINYINT
+	, CategoryName VARCHAR(50)
+	);
+
+INSERT #Category (CategoryID, CategoryName)
+VALUES
+    (0, '')
+	, (1, 'Discovery')
+    , (2, 'Recoverability')
+    , (3, 'Security')
+    , (4, 'Availability')
+    , (5, 'Integrity')
+    , (6, 'Reliability')
+    , (7, 'Performance')
+    , (8, 'Troubleshooting');
+	
 IF OBJECT_ID('tempdb..#Results') IS NOT NULL
 	DROP TABLE #Results;
 
@@ -190,24 +209,18 @@ CREATE TABLE #Results (
 	, ReadMoreURL XML
 	);
 
-IF OBJECT_ID('tempdb..#Category') IS NOT NULL
-	DROP TABLE #Category;
+INSERT #Results
+SELECT
+	0
+	, 0
+	, 0
+	, 'sp_CheckSecurity'
+	, 'Provided by Straight Path IT Solutions, LLC'
+	, NULL
+	, '(Information captured on ' + CONVERT(VARCHAR(100), GETDATE(), 101) + ' using version ' + @Version + ')'
+	, 'Use this FREE tool to check your SQL Server instance for security issues!'
+	, 'https://straightpathsql.com/tool/sp_checksecurity/';
 
-CREATE TABLE #Category (
-    CategoryID TINYINT
-	, CategoryName VARCHAR(50)
-	);
-
-INSERT #Category (CategoryID, CategoryName)
-VALUES
-    (1, 'Discovery')
-    , (2, 'Recoverability')
-    , (3, 'Security')
-    , (4, 'Availability')
-    , (5, 'Integrity')
-    , (6, 'Reliability')
-    , (7, 'Performance')
-    , (8, 'Troubleshooting');
 
 IF OBJECT_ID('tempdb..#SQLVersions') IS NOT NULL
 	DROP TABLE #SQLVersions;
@@ -394,7 +407,7 @@ IF @Mode IN (99) BEGIN /* Collect instance info */
 		, 'IP address'
 		, NULL
 		, COALESCE(CONVERT(VARCHAR(15), CONNECTIONPROPERTY('local_net_address')), 'UNKNOWN')
-		, 'Check to make sure is not an externally-facing server and this IP address cannot be reached outside your network.'
+		, 'Check to make sure this is not an externally-facing server and this IP address cannot be reached outside your network.'
 		, 'https://straightpathsql.com/check/ip-address';
 
 	END;
@@ -471,11 +484,11 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 	IF SERVERPROPERTY('EngineEdition') <> 8 /* Azure Managed Instances */ BEGIN
 		IF ((@SQLVersionMajor = 11 AND @SQLVersionMinor < 7507) OR
 			(@SQLVersionMajor = 12 AND @SQLVersionMinor < 6449) OR
-			(@SQLVersionMajor = 13 AND @SQLVersionMinor < 6485) OR
-			(@SQLVersionMajor = 14 AND @SQLVersionMinor < 3525) OR
-			(@SQLVersionMajor = 15 AND @SQLVersionMinor < 4465) OR
-			(@SQLVersionMajor = 16 AND @SQLVersionMinor < 4250) OR
-			(@SQLVersionMajor = 17 AND @SQLVersionMinor < 4030) )
+			(@SQLVersionMajor = 13 AND @SQLVersionMinor < 6490) OR
+			(@SQLVersionMajor = 14 AND @SQLVersionMinor < 3530) OR
+			(@SQLVersionMajor = 15 AND @SQLVersionMinor < 4470) OR
+			(@SQLVersionMajor = 16 AND @SQLVersionMinor < 4255) OR
+			(@SQLVersionMajor = 17 AND @SQLVersionMinor < 4040) )
 
 		INSERT #Results
 		SELECT 
@@ -556,7 +569,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 		, 'Renamed sa account'
 		, 'The sa login has been renamed.' 
 		, NULL
-		, 'The sa account is has been renamed, but the new name can be easily determined by any other login.'
+		, 'The sa account has been renamed, but the new name can be easily determined by any other login.'
 		, 'Did you mean to rename this? It''s more important that this login is disabled than renamed.'
 		, 'https://straightpathsql.com/check/sa-login-renamed'
 	FROM sys.sql_logins
@@ -592,7 +605,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 			, NULL
 			, 'The ' + AccountType + ' ' + AccountName + ' is in the local Administrator group. They can add themselves to the sysadmin role and then do anything in SQL Server, including dropping databases or changing other permissions.' 
 			, 'Review all users and groups in the local Administrators group to verify they require these elevated permissions.' 
-			, 'https://straightpathsql.com/cs/local-administrators'
+			, 'https://straightpathsql.com/check/local-administrators'
 		FROM @LocalAdmin
 		
 		INSERT #Results
@@ -682,6 +695,81 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 		WHERE p.[state] IN ( 'G', 'W' )
 		AND p.[class] = 100
 		AND p.[type] = 'CL' )
+		AND pri.[name] NOT LIKE '##%##';
+
+	/* check for SQL Agent proxy account in sysadmin role */
+	INSERT #Results
+	SELECT 
+		3
+		, 352
+		, 2
+		, 'SQL Agent proxy account in sysadmin'
+		, 'The SQL Agent proxy [' + p.[name] + '] uses the account [' + c.credential_identity + '], which is in the sysadmin role.'
+		, NULL
+		, 'Anyone granted use of this proxy can run job steps (CmdExec, PowerShell, SSIS, etc.) under an account that can do anything on the server, which is a privilege escalation path.'
+		, 'We recommend mapping this proxy to a credential for an account that is not in the sysadmin role to adhere to the principle of least privilege.'
+		, 'https://straightpathsql.com/check/proxy-account-in-sysadmin'
+	FROM msdb.dbo.sysproxies AS p
+	INNER JOIN sys.credentials AS c
+		ON p.credential_id = c.credential_id
+	WHERE IS_SRVROLEMEMBER('sysadmin', c.credential_identity) = 1
+		AND p.[enabled] = 1;
+
+	/* check for xp_cmdshell proxy account credential */
+	INSERT #Results
+	SELECT 
+		3
+		, 353
+		, 1
+		, 'xp_cmdshell proxy account exists'
+		, 'The xp_cmdshell proxy account credential exists.'
+		, NULL
+		, 'The credential [##xp_cmdshell_proxy_account##] exists, which lets logins that are NOT in the sysadmin role run operating system commands via xp_cmdshell using the Windows account [' + credential_identity + ']. '
+		, 'Verify that non-sysadmin OS command execution is intended. If not, remove the proxy.'
+		, 'https://straightpathsql.com/check/xp-cmdshell-proxy-account'
+	FROM sys.credentials
+	WHERE name = '##xp_cmdshell_proxy_account##';
+
+	/* IMPERSONATE ANY LOGIN permissions */
+	INSERT #Results
+	SELECT 
+		3
+		, 354
+		, 1
+		, 'IMPERSONATE ANY LOGIN permissions'
+		, 'Logins with the IMPERSONATE ANY LOGIN permission.'
+		, NULL
+		, 'Login [' + pri.[name] + '] has the IMPERSONATE ANY LOGIN permission, which lets it execute as any other login including members of the sysadmin role.'
+		, 'Review any logins and groups with IMPERSONATE ANY LOGIN to verify they require it, and consider DENY IMPERSONATE ANY LOGIN on high-privilege logins that do not need it.'
+		, 'https://straightpathsql.com/check/impersonate-any-login'
+	FROM sys.server_principals AS pri
+	WHERE pri.[principal_id] IN (
+		SELECT p.[grantee_principal_id]
+		FROM sys.server_permissions AS p
+		WHERE p.[state] IN ( 'G', 'W' )
+		AND p.[class] = 100
+		AND p.[permission_name] = 'IMPERSONATE ANY LOGIN' )
+		AND pri.[name] NOT LIKE '##%##';
+
+	/* ALTER ANY LOGIN permissions */
+	INSERT #Results
+	SELECT 
+		3
+		, 355
+		, 2
+		, 'ALTER ANY LOGIN permissions'
+		, 'Logins with the ALTER ANY LOGIN permission.'
+		, NULL
+		, 'Login [' + pri.[name] + '] has the ALTER ANY LOGIN permission, which lets it create, alter, drop, enable, disable, rename, and reset passwords for other logins.'
+		, 'Review the logins and groups with ALTER ANY LOGIN to verify they manage logins as part of their role, and remove the permission from any that do not.'
+		, 'https://straightpathsql.com/check/alter-any-login'
+	FROM sys.server_principals AS pri
+	WHERE pri.[principal_id] IN (
+		SELECT p.[grantee_principal_id]
+		FROM sys.server_permissions AS p
+		WHERE p.[state] IN ( 'G', 'W' )
+		AND p.[class] = 100
+		AND p.[permission_name] = 'ALTER ANY LOGIN' )
 		AND pri.[name] NOT LIKE '##%##';
 
 
@@ -822,7 +910,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 		, 'Configuration: Cross-database ownership chaining'  
 		, 'The "cross-database ownership chaining" configuration is enabled.'
 		, NULL
-		, 'Cross-database ownership chaining allows database owners and members of the db_ddladmin and db_owners database roles to create objects that are owned by other users.' 
+		, 'Cross-database ownership chaining allows database owners and members of the db_ddladmin and db_owner database roles to create objects that are owned by other users.' 
 		, 'Since enabling this setting allows certain users to create objects that can potentially target objects in other databases, this configuration option should be enabled only at the database level.'
 		, 'https://straightpathsql.com/check/cross-database-ownership-chaining'
 	FROM master.sys.configurations
@@ -1354,7 +1442,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 		, @value = @NumErrorLogs OUTPUT
 		, @no_output = 'no_output';
 
-	IF (SELECT ISNULL(@NumErrorLogs, 12)) < 12 
+	IF (SELECT ISNULL(@NumErrorLogs, 12)) <= 7
 
 		INSERT #Results
 		SELECT 
@@ -1362,7 +1450,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 			, 622
 			, 2
 			, 'Too few SQL Server error log files'
-			, 'Error log retention is at the default value of 6 files.'
+			, 'Error log retention is at the default value of 6 archive files.'
 			, NULL
 			, 'This instance is configured for only ' + CONVERT(VARCHAR(10), (ISNULL(@NumErrorLogs, -1))) + ' SQL Server error log files.'
 			, 'We recommend having between 12 and 52 SQL Server error log files to review for patterns of login failures or suspect IP addresses which may indicate hacking attempts.'
@@ -1618,7 +1706,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 		, 'A database has the TRUSTWORTHY configuration enabled.'
 		, db_name(database_id)
 		, 'The database ' + db_name(database_id) + ' has the TRUSTWORTHY setting enabled.'
-		, 'With this setting ON, any code in the database to be "trusted" in usage outside the context of the database.'
+		, 'With this setting ON, any code in the database is allowed to be "trusted" in usage outside the context of the database.'
 		, 'https://straightpathsql.com/check/trustworthy-enabled'
 	FROM sys.databases
 	WHERE database_id > 4
