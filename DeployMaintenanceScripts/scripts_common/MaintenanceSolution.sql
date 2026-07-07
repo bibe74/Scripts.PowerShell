@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-06-29 20:49:12
+Version: 2026-07-04 20:57:51
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -133,7 +133,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-29 20:49:12                                                               //--
+  --// Version: 2026-07-04 20:57:51                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -321,9 +321,9 @@ BEGIN
   BEGIN
     INSERT INTO dbo.CommandLog (DatabaseName, SchemaName, ObjectName, ObjectType, IndexName, IndexType, StatisticsName, PartitionNumber, ExtendedInfo, CommandType, Command, StartTime)
     VALUES (@DatabaseName, @SchemaName, @ObjectName, @ObjectType, @IndexName, @IndexType, @StatisticsName, @PartitionNumber, @ExtendedInfo, @CommandType, @CommandMasked, @StartTime)
-  END
 
-  SET @ID = SCOPE_IDENTITY()
+    SET @ID = SCOPE_IDENTITY()
+  END
 
   ----------------------------------------------------------------------------------------------------
   --// Execute command                                                                            //--
@@ -492,7 +492,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-29 20:49:12                                                               //--
+  --// Version: 2026-07-04 20:57:51                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -608,9 +608,9 @@ BEGIN
                                 ParentDirectoryExists bit)
 
   DECLARE @tmpDatabases TABLE (ID int IDENTITY,
-                               DatabaseName nvarchar(max),
-                               DatabaseNameFS nvarchar(max),
-                               DatabaseType nvarchar(max),
+                               DatabaseName nvarchar(128),
+                               DatabaseNameFS nvarchar(128),
+                               DatabaseType nvarchar(1),
                                AvailabilityGroup bit,
                                StartPosition int,
                                DatabaseSize bigint,
@@ -621,16 +621,16 @@ BEGIN
                                PRIMARY KEY (Selected, Completed, [Order], ID))
 
   DECLARE @tmpAvailabilityGroups TABLE (ID int IDENTITY PRIMARY KEY,
-                                        AvailabilityGroupName nvarchar(max),
+                                        AvailabilityGroupName nvarchar(128),
                                         StartPosition int,
                                         Selected bit DEFAULT 0)
 
-  DECLARE @tmpDatabasesAvailabilityGroups TABLE (DatabaseName nvarchar(max),
-                                                 AvailabilityGroupName nvarchar(max))
+  DECLARE @tmpDatabasesAvailabilityGroups TABLE (DatabaseName nvarchar(128),
+                                                 AvailabilityGroupName nvarchar(128))
 
   DECLARE @SelectedDatabases TABLE (DatabaseName nvarchar(max),
-                                    DatabaseType nvarchar(max),
-                                    AvailabilityGroup nvarchar(max),
+                                    DatabaseType nvarchar(1),
+                                    AvailabilityGroup bit,
                                     StartPosition int,
                                     Selected bit)
 
@@ -661,7 +661,7 @@ BEGIN
                               Mirror bit,
                               DirectoryNumber int)
 
-  DECLARE @CurrentFiles TABLE ([Type] nvarchar(max),
+  DECLARE @CurrentFiles TABLE ([Type] nvarchar(4),
                                FilePath nvarchar(max),
                                Mirror bit)
 
@@ -700,7 +700,7 @@ BEGIN
     END
   END
 
-  DECLARE @AmazonRDS bit = CASE WHEN EXISTS (SELECT * FROM sys.databases WHERE [name] = 'rdsadmin') AND SUSER_SNAME(0x01) = 'rdsa' THEN 1 ELSE 0 END
+  DECLARE @AmazonRDS bit = CASE WHEN SERVERPROPERTY('EngineEdition') IN (5, 8) THEN 0 WHEN EXISTS (SELECT * FROM sys.databases WHERE [name] = 'rdsadmin') AND SUSER_SNAME(0x01) = 'rdsa' THEN 1 ELSE 0 END
 
   ----------------------------------------------------------------------------------------------------
   --// Log initial information                                                                    //--
@@ -1119,7 +1119,7 @@ BEGIN
   --// Check database names                                                                       //--
   ----------------------------------------------------------------------------------------------------
 
-  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
+  SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
                          WITHIN GROUP (ORDER BY DatabaseName ASC)
   FROM @tmpDatabases
   WHERE Selected = 1
@@ -1131,7 +1131,7 @@ BEGIN
     SELECT 'The names of the following databases are not supported: ' + @ErrorMessage + '.', 16, 1
   END
 
-  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
+  SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
                          WITHIN GROUP (ORDER BY DatabaseName ASC)
   FROM @tmpDatabases
   WHERE UPPER(DatabaseNameFS) IN(SELECT UPPER(DatabaseNameFS) FROM @tmpDatabases GROUP BY UPPER(DatabaseNameFS) HAVING COUNT(*) > 1 AND MAX(CAST(Selected AS int)) = 1)
@@ -1245,7 +1245,7 @@ BEGIN
   IF EXISTS (SELECT * FROM @Directories GROUP BY DirectoryPath HAVING COUNT(*) <> 1)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Directory is not supported.', 16, 2
+    SELECT 'The same directory has been specified multiple times in the parameters @Directory and @MirrorDirectory.', 16, 2
   END
 
   IF (SELECT COUNT(*) FROM @Directories WHERE Mirror = 0) <> (SELECT COUNT(*) FROM @Directories WHERE Mirror = 1) AND (SELECT COUNT(*) FROM @Directories WHERE Mirror = 1) > 0
@@ -1269,7 +1269,7 @@ BEGIN
   IF EXISTS (SELECT * FROM @Directories WHERE Mirror = 0 AND DirectoryPath = 'NUL') AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 1)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'Mirrored backup is not supported when backing up to NUL', 16, 6
+    SELECT 'Mirrored backup is not supported when backing up to NUL.', 16, 6
   END
 
   IF EXISTS (SELECT * FROM @Directories WHERE Mirror = 0 AND DirectoryPath = 'NUL') AND @BackupSoftware IS NOT NULL
@@ -1286,34 +1286,28 @@ BEGIN
     SELECT 'The value for the parameter @MirrorDirectory is not supported.', 16, 1
   END
 
-  IF EXISTS (SELECT * FROM @Directories GROUP BY DirectoryPath HAVING COUNT(*) <> 1)
+  IF @BackupSoftware IN('SQLBACKUP','SQLSAFE') AND (SELECT COUNT(*) FROM @Directories WHERE Mirror = 1) > 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @MirrorDirectory is not supported.', 16, 2
   END
 
-  IF @BackupSoftware IN('SQLBACKUP','SQLSAFE') AND (SELECT COUNT(*) FROM @Directories WHERE Mirror = 1) > 1
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MirrorDirectory is not supported.', 16, 4
-  END
-
   IF @MirrorDirectory IS NOT NULL AND SERVERPROPERTY('EngineEdition') = 8
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MirrorDirectory is not supported.', 16, 5
+    SELECT 'The value for the parameter @MirrorDirectory is not supported.', 16, 3
   END
 
   IF @MirrorDirectory IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MirrorDirectory is not supported.', 16, 6
+    SELECT 'The value for the parameter @MirrorDirectory is not supported.', 16, 4
   END
 
   IF (@BackupSoftware IS NULL AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 1) AND SERVERPROPERTY('EngineEdition') <> 3)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MirrorDirectory is not supported. Mirrored backup to disk is only available in Enterprise and Developer Edition.', 16, 8
+    SELECT 'The value for the parameter @MirrorDirectory is not supported. Mirrored backup to disk is only available in Enterprise and Developer Edition.', 16, 5
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1430,13 +1424,13 @@ BEGIN
   IF EXISTS (SELECT * FROM @URLs GROUP BY DirectoryPath HAVING COUNT(*) <> 1)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @URL is not supported.', 16, 2
+    SELECT 'The same URL has been specified multiple times in the parameters @URL and @MirrorURL.', 16, 2
   END
 
   IF (SELECT COUNT(*) FROM @URLs WHERE Mirror = 0) <> (SELECT COUNT(*) FROM @URLs WHERE Mirror = 1) AND (SELECT COUNT(*) FROM @URLs WHERE Mirror = 1) > 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @URL is not supported.', 16, 3
+    SELECT 'The number of URLs for the parameters @URL and @MirrorURL has to be the same.', 16, 3
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1445,18 +1439,6 @@ BEGIN
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @MirrorURL is not supported.', 16, 1
-  END
-
-  IF EXISTS (SELECT * FROM @URLs GROUP BY DirectoryPath HAVING COUNT(*) <> 1)
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MirrorURL is not supported.', 16, 2
-  END
-
-  IF (SELECT COUNT(*) FROM @URLs WHERE Mirror = 0) <> (SELECT COUNT(*) FROM @URLs WHERE Mirror = 1) AND (SELECT COUNT(*) FROM @URLs WHERE Mirror = 1) > 0
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MirrorURL is not supported.', 16, 3
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1582,13 +1564,13 @@ BEGIN
   IF @BackupSoftware = 'SQLSAFE' AND @Encrypt = 'Y' AND @Verify = 'Y'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Verify is not supported. Verify is not supported with encrypted backups with Idera SQL Safe Backup', 16, 2
+    SELECT 'The value for the parameter @Verify is not supported. Verify is not supported with encrypted backups with Idera SQL Safe Backup.', 16, 2
   END
 
   IF @Verify = 'Y' AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Verify is not supported. Verify is not supported with Data Domain Boost', 16, 3
+    SELECT 'The value for the parameter @Verify is not supported. Verify is not supported with Data Domain Boost.', 16, 3
   END
 
   IF @Verify = 'Y' AND EXISTS(SELECT * FROM @Directories WHERE DirectoryPath = 'NUL')
@@ -1614,25 +1596,25 @@ BEGIN
   IF @CleanupTime IS NOT NULL AND EXISTS(SELECT * FROM @Directories WHERE DirectoryPath = 'NUL')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported when backing up to NUL.', 16, 4
+    SELECT 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported when backing up to NUL.', 16, 3
   END
 
   IF @CleanupTime IS NOT NULL AND ((@DirectoryStructure NOT LIKE '%{DatabaseName}%' OR @DirectoryStructure IS NULL) OR (SERVERPROPERTY('IsHadrEnabled') = 1 AND (@AvailabilityGroupDirectoryStructure NOT LIKE '%{DatabaseName}%' OR @AvailabilityGroupDirectoryStructure IS NULL)))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {DatabaseName} is not part of the directory.', 16, 5
+    SELECT 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {DatabaseName} is not part of the directory.', 16, 4
   END
 
   IF @CleanupTime IS NOT NULL AND ((@DirectoryStructure NOT LIKE '%{BackupType}%' OR @DirectoryStructure IS NULL) OR (SERVERPROPERTY('IsHadrEnabled') = 1 AND (@AvailabilityGroupDirectoryStructure NOT LIKE '%{BackupType}%' OR @AvailabilityGroupDirectoryStructure IS NULL))) AND (SELECT COUNT(*) FROM (SELECT @FileExtensionFull AS FileExtension UNION SELECT @FileExtensionDiff UNION SELECT @FileExtensionLog) FileExtension) <> 3
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {BackupType} is not part of the directory and the file extensions are not unique.', 16, 6
+    SELECT 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {BackupType} is not part of the directory and the file extensions are not unique.', 16, 5
   END
 
   IF @CleanupTime IS NOT NULL AND @CopyOnly = 'Y' AND ((@DirectoryStructure NOT LIKE '%{CopyOnly}%' OR @DirectoryStructure IS NULL) OR (SERVERPROPERTY('IsHadrEnabled') = 1 AND (@AvailabilityGroupDirectoryStructure NOT LIKE '%{CopyOnly}%' OR @AvailabilityGroupDirectoryStructure IS NULL)))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {CopyOnly} is not part of the directory.', 16, 7
+    SELECT 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {CopyOnly} is not part of the directory.', 16, 6
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1699,7 +1681,7 @@ BEGIN
   IF @CompressionAlgorithm IS NOT NULL AND @BackupSoftware IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CompressionAlgorithm is not supported. Setting the compression algorithm is only supported with SQL Server native backup', 16, 5
+    SELECT 'The value for the parameter @CompressionAlgorithm is not supported. Setting the compression algorithm is only supported with SQL Server native backup.', 16, 5
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1755,7 +1737,7 @@ BEGIN
   IF @BackupSoftware IS NOT NULL AND @HostPlatform = 'Linux'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @BackupSoftware is not supported. Only native backups are supported on Linux', 16, 2
+    SELECT 'The value for the parameter @BackupSoftware is not supported. Only native backups are supported on Linux.', 16, 2
   END
 
   IF @BackupSoftware = 'LITESPEED' AND NOT EXISTS (SELECT * FROM [master].sys.objects WHERE [type] = 'X' AND [name] = 'xp_backup_database')
@@ -1801,13 +1783,13 @@ BEGIN
   IF @BlockSize IS NOT NULL AND @BackupSoftware = 'SQLBACKUP'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @BlockSize is not supported. This parameter is not supported with Redgate SQL Backup Pro', 16, 2
+    SELECT 'The value for the parameter @BlockSize is not supported. This parameter is not supported with Redgate SQL Backup Pro.', 16, 2
   END
 
   IF @BlockSize IS NOT NULL AND @BackupSoftware = 'SQLSAFE'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @BlockSize is not supported. This parameter is not supported with Idera SQL Safe', 16, 3
+    SELECT 'The value for the parameter @BlockSize is not supported. This parameter is not supported with Idera SQL Safe.', 16, 3
   END
 
   IF @BlockSize IS NOT NULL AND @URL IS NOT NULL AND @Credential IS NOT NULL
@@ -1819,12 +1801,12 @@ BEGIN
   IF @BlockSize IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @BlockSize is not supported. This parameter is not supported with Data Domain Boost', 16, 5
+    SELECT 'The value for the parameter @BlockSize is not supported. This parameter is not supported with Data Domain Boost.', 16, 5
   END
 
   ----------------------------------------------------------------------------------------------------
 
-  IF @BufferCount <= 0 OR @BufferCount > 2147483647
+  IF @BufferCount <= 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @BufferCount is not supported.', 16, 1
@@ -2105,7 +2087,6 @@ BEGIN
   END
 
   IF @BackupSoftware = 'SQLSAFE' AND @Encrypt = 'Y' AND (@EncryptionAlgorithm NOT IN('AES_128','AES_256') OR @EncryptionAlgorithm IS NULL)
-  OR (@EncryptionAlgorithm IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @EncryptionAlgorithm is not supported.', 16, 4
@@ -2254,7 +2235,7 @@ BEGIN
   IF @URL IS NOT NULL AND @BackupSoftware IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @URL is not supported.', 16, 4
+    SELECT 'The value for the parameter @URL is not supported.', 16, 3
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2262,19 +2243,19 @@ BEGIN
   IF @Credential IS NOT NULL AND @URL IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Credential is not supported.', 16, 2
+    SELECT 'The value for the parameter @Credential is not supported.', 16, 1
   END
 
   IF @URL IS NOT NULL AND @Credential IS NULL AND NOT EXISTS(SELECT * FROM sys.credentials WHERE UPPER(credential_identity) IN('SHARED ACCESS SIGNATURE','MANAGED IDENTITY','S3 ACCESS KEY'))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Credential is not supported.', 16, 3
+    SELECT 'The value for the parameter @Credential is not supported.', 16, 2
   END
 
   IF @Credential IS NOT NULL AND NOT EXISTS(SELECT * FROM sys.credentials WHERE name = @Credential)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Credential is not supported.', 16, 4
+    SELECT 'The value for the parameter @Credential is not supported.', 16, 3
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2316,13 +2297,13 @@ BEGIN
   IF @MirrorURL IS NOT NULL AND @BackupSoftware IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MirrorURL is not supported.', 16, 4
+    SELECT 'The value for the parameter @MirrorURL is not supported.', 16, 3
   END
 
   IF @MirrorURL IS NOT NULL AND @URL IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MirrorURL is not supported.', 16, 5
+    SELECT 'The value for the parameter @MirrorURL is not supported.', 16, 4
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2352,19 +2333,19 @@ BEGIN
   IF @MinModificationLevel <= 0 OR @MinModificationLevel > 100
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MinModificationLevel is not supported.', 16, 2
+    SELECT 'The value for the parameter @MinModificationLevel is not supported.', 16, 1
   END
 
   IF @MinModificationLevel IS NOT NULL AND @ChangeBackupType = 'N'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The parameter @MinModificationLevel can only be used together with @ChangeBackupType = ''Y''.', 16, 3
+    SELECT 'The parameter @MinModificationLevel can only be used together with @ChangeBackupType = ''Y''.', 16, 2
   END
 
   IF @MinModificationLevel IS NOT NULL AND @BackupType <> 'DIFF'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The parameter @MinModificationLevel can only be used for differential backups.', 16, 4
+    SELECT 'The parameter @MinModificationLevel can only be used for differential backups.', 16, 3
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2386,7 +2367,7 @@ BEGIN
   IF @MinLogSizeSinceLastLogBackup IS NOT NULL AND @BackupType <> 'LOG'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MinLogSizeSinceLastLogBackup is not supported.', 16, 2
+    SELECT 'The value for the parameter @MinLogSizeSinceLastLogBackup is not supported.', 16, 1
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2394,7 +2375,7 @@ BEGIN
   IF @MinTimeSinceLastLogBackup IS NOT NULL AND @BackupType <> 'LOG'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MinTimeSinceLastLogBackup is not supported.', 16, 2
+    SELECT 'The value for the parameter @MinTimeSinceLastLogBackup is not supported.', 16, 1
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2692,25 +2673,25 @@ BEGIN
   IF @ObjectLevelRecoveryMap NOT IN('Y','N') OR @ObjectLevelRecoveryMap IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @ObjectLevelRecovery is not supported.', 16, 1
+    SELECT 'The value for the parameter @ObjectLevelRecoveryMap is not supported.', 16, 1
   END
 
   IF @ObjectLevelRecoveryMap = 'Y' AND @BackupSoftware IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @ObjectLevelRecovery is not supported.', 16, 2
+    SELECT 'The value for the parameter @ObjectLevelRecoveryMap is not supported.', 16, 2
   END
 
   IF @ObjectLevelRecoveryMap = 'Y' AND @BackupSoftware <> 'LITESPEED'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @ObjectLevelRecovery is not supported.', 16, 3
+    SELECT 'The value for the parameter @ObjectLevelRecoveryMap is not supported.', 16, 3
   END
 
   IF @ObjectLevelRecoveryMap = 'Y' AND @BackupType = 'LOG'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @ObjectLevelRecovery is not supported.', 16, 4
+    SELECT 'The value for the parameter @ObjectLevelRecoveryMap is not supported.', 16, 4
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2764,7 +2745,7 @@ BEGIN
   IF @RetainDays IS NOT NULL AND @BackupSoftware <> 'LITESPEED'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @RetainDays is not supported.', 16, 1
+    SELECT 'The value for the parameter @RetainDays is not supported.', 16, 2
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2794,7 +2775,7 @@ BEGIN
   IF @DatabaseOrder IS NOT NULL AND SERVERPROPERTY('EngineEdition') = 5
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @DatabaseOrder is not supported.', 16, 3
+    SELECT 'The value for the parameter @DatabaseOrder is not supported.', 16, 2
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2839,7 +2820,8 @@ BEGIN
   --// Check that selected databases and availability groups exist                                //--
   ----------------------------------------------------------------------------------------------------
 
-  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
+  SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
+                         WITHIN GROUP (ORDER BY DatabaseName ASC)
   FROM @SelectedDatabases
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
@@ -2850,7 +2832,8 @@ BEGIN
     SELECT 'The following databases in the @Databases parameter do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(AvailabilityGroupName), ', ')
+  SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(AvailabilityGroupName) AS nvarchar(max)), ', ')
+                         WITHIN GROUP (ORDER BY AvailabilityGroupName ASC)
   FROM @SelectedAvailabilityGroups
   WHERE AvailabilityGroupName NOT LIKE '%[%]%'
   AND AvailabilityGroupName NOT IN (SELECT AvailabilityGroupName FROM @tmpAvailabilityGroups)
@@ -3066,17 +3049,17 @@ BEGIN
                DatabaseName
         FROM @tmpDatabases tmpDatabases
         WHERE Selected = 1
-        AND NOT EXISTS (SELECT * FROM dbo.QueueDatabase WHERE DatabaseName = tmpDatabases.DatabaseName AND QueueID = @QueueID)
+        AND NOT EXISTS (SELECT * FROM dbo.QueueDatabase WHERE DatabaseName COLLATE DATABASE_DEFAULT = tmpDatabases.DatabaseName AND QueueID = @QueueID)
 
         DELETE QueueDatabase
         FROM dbo.QueueDatabase QueueDatabase
         WHERE QueueID = @QueueID
-        AND NOT EXISTS (SELECT * FROM @tmpDatabases tmpDatabases WHERE DatabaseName = QueueDatabase.DatabaseName AND Selected = 1)
+        AND NOT EXISTS (SELECT * FROM @tmpDatabases tmpDatabases WHERE DatabaseName = QueueDatabase.DatabaseName COLLATE DATABASE_DEFAULT AND Selected = 1)
 
         UPDATE QueueDatabase
         SET DatabaseOrder = tmpDatabases.[Order]
         FROM dbo.QueueDatabase QueueDatabase
-        INNER JOIN @tmpDatabases tmpDatabases ON QueueDatabase.DatabaseName = tmpDatabases.DatabaseName
+        INNER JOIN @tmpDatabases tmpDatabases ON QueueDatabase.DatabaseName COLLATE DATABASE_DEFAULT = tmpDatabases.DatabaseName
         WHERE QueueID = @QueueID
       END
 
@@ -3129,7 +3112,7 @@ BEGIN
           RequestID = (SELECT request_id FROM sys.dm_exec_requests WHERE session_id = @@SPID),
           RequestStartTime = (SELECT start_time FROM sys.dm_exec_requests WHERE session_id = @@SPID),
           @CurrentDatabaseName = DatabaseName,
-          @CurrentDatabaseNameFS = (SELECT DatabaseNameFS FROM @tmpDatabases WHERE DatabaseName = QueueDatabase.DatabaseName)
+          @CurrentDatabaseNameFS = (SELECT DatabaseNameFS FROM @tmpDatabases WHERE DatabaseName = QueueDatabase.DatabaseName COLLATE DATABASE_DEFAULT)
       FROM (SELECT TOP 1 DatabaseStartTime,
                          DatabaseEndTime,
                          SessionID,
@@ -3292,7 +3275,7 @@ BEGIN
 
     IF @CurrentDatabaseState = 'ONLINE' AND NOT (@CurrentInStandby = 1)
     BEGIN
-      SELECT @CurrentLastLogBackup = log_backup_time,
+      SELECT @CurrentLastLogBackup = NULLIF(log_backup_time,'1900-01-01'),
              @CurrentLogSizeSinceLastLogBackup = log_since_last_log_backup_mb
       FROM sys.dm_db_log_stats (DB_ID(@CurrentDatabaseName))
     END
@@ -3447,7 +3430,7 @@ BEGIN
 
     IF @CurrentBackupType = 'LOG'
     BEGIN
-      SET @DatabaseMessage = 'Last log backup: ' + ISNULL(CONVERT(nvarchar(19),NULLIF(@CurrentLastLogBackup,'1900-01-01'),120),'N/A')
+      SET @DatabaseMessage = 'Last log backup: ' + ISNULL(CONVERT(nvarchar(19),@CurrentLastLogBackup,120),'N/A')
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
       SET @DatabaseMessage = 'Log size since last log backup (MB): ' + ISNULL(CAST(@CurrentLogSizeSinceLastLogBackup AS nvarchar(max)),'N/A')
@@ -3845,7 +3828,7 @@ BEGIN
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Second}',RIGHT('0' + CAST(DATEPART(SECOND,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar(max)),2))
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Millisecond}',RIGHT('00' + CAST(DATEPART(MILLISECOND,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar(max)),3))
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Microsecond}',RIGHT('00000' + CAST(DATEPART(MICROSECOND,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar(max)),6))
-      SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{NumberOfFiles}',@CurrentNumberOfFiles)
+      SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{NumberOfFiles}',CAST(@CurrentNumberOfFiles AS nvarchar(max)))
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{FileExtension}',@CurrentFileExtension)
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{MajorVersion}',ISNULL(CAST(SERVERPROPERTY('ProductMajorVersion') AS nvarchar(max)),PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),4)))
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{MinorVersion}',ISNULL(CAST(SERVERPROPERTY('ProductMinorVersion') AS nvarchar(max)),PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),3)))
@@ -4703,6 +4686,7 @@ BEGIN
       SET @ErrorMessage = 'The database ' + QUOTENAME(@CurrentDatabaseName) + ' is in a SUSPECT state.'
       RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
       SET @Error = @@ERROR
+      SET @ReturnCode = @Error
       RAISERROR(@EmptyLine,10,1) WITH NOWAIT
     END
 
@@ -4848,7 +4832,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-29 20:49:12                                                               //--
+  --// Version: 2026-07-04 20:57:51                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4922,8 +4906,8 @@ BEGIN
   DECLARE @CurrentState int
 
   DECLARE @tmpDatabases TABLE (ID int IDENTITY,
-                               DatabaseName nvarchar(max),
-                               DatabaseType nvarchar(max),
+                               DatabaseName nvarchar(128),
+                               DatabaseType nvarchar(1),
                                AvailabilityGroup bit,
                                [Snapshot] bit,
                                StartPosition int,
@@ -4936,16 +4920,16 @@ BEGIN
                                PRIMARY KEY (Selected, Completed, [Order], ID))
 
   DECLARE @tmpAvailabilityGroups TABLE (ID int IDENTITY PRIMARY KEY,
-                                        AvailabilityGroupName nvarchar(max),
+                                        AvailabilityGroupName nvarchar(128),
                                         StartPosition int,
                                         Selected bit DEFAULT 0)
 
-  DECLARE @tmpDatabasesAvailabilityGroups TABLE (DatabaseName nvarchar(max),
-                                                 AvailabilityGroupName nvarchar(max))
+  DECLARE @tmpDatabasesAvailabilityGroups TABLE (DatabaseName nvarchar(128),
+                                                 AvailabilityGroupName nvarchar(128))
 
   DECLARE @tmpFileGroups TABLE (ID int IDENTITY,
                                 FileGroupID int,
-                                FileGroupName nvarchar(max),
+                                FileGroupName nvarchar(128),
                                 StartPosition int,
                                 [Order] int DEFAULT 0,
                                 Selected bit DEFAULT 0,
@@ -4954,10 +4938,10 @@ BEGIN
 
   DECLARE @tmpObjects TABLE (ID int IDENTITY,
                              SchemaID int,
-                             SchemaName nvarchar(max),
+                             SchemaName nvarchar(128),
                              ObjectID int,
-                             ObjectName nvarchar(max),
-                             ObjectType nvarchar(max),
+                             ObjectName nvarchar(128),
+                             ObjectType nvarchar(2),
                              StartPosition int,
                              [Order] int DEFAULT 0,
                              Selected bit DEFAULT 0,
@@ -4965,8 +4949,8 @@ BEGIN
                              PRIMARY KEY (Selected, Completed, [Order], ID))
 
   DECLARE @SelectedDatabases TABLE (DatabaseName nvarchar(max),
-                                    DatabaseType nvarchar(max),
-                                    AvailabilityGroup nvarchar(max),
+                                    DatabaseType nvarchar(1),
+                                    AvailabilityGroup bit,
                                     StartPosition int,
                                     Selected bit)
 
@@ -5518,7 +5502,7 @@ BEGIN
   IF NOT EXISTS (SELECT * FROM @SelectedCheckCommands)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CheckCommands is not supported.' , 16, 3
+    SELECT 'The value for the parameter @CheckCommands is not supported.', 16, 3
   END
 
   IF EXISTS (SELECT * FROM @SelectedCheckCommands WHERE CheckCommand IN('CHECKDB')) AND EXISTS (SELECT CheckCommand FROM @SelectedCheckCommands WHERE CheckCommand IN('CHECKFILEGROUP','CHECKALLOC','CHECKTABLE','CHECKCATALOG'))
@@ -5673,6 +5657,12 @@ BEGIN
     SELECT 'The value for the parameter @LockTimeout is not supported.', 16, 1
   END
 
+  IF @LockTimeout > 86400
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @LockTimeout is not supported.', 16, 2
+  END
+
   ----------------------------------------------------------------------------------------------------
 
   IF @LockMessageSeverity NOT IN(10, 16) OR @LockMessageSeverity IS NULL
@@ -5763,7 +5753,8 @@ BEGIN
   --// Check that selected databases and availability groups exist                                //--
   ----------------------------------------------------------------------------------------------------
 
-  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
+  SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
+                         WITHIN GROUP (ORDER BY DatabaseName ASC)
   FROM @SelectedDatabases
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
@@ -5774,7 +5765,8 @@ BEGIN
     SELECT 'The following databases in the @Databases parameter do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
+  SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
+                         WITHIN GROUP (ORDER BY DatabaseName ASC)
   FROM @SelectedFileGroups
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
@@ -5785,7 +5777,8 @@ BEGIN
     SELECT 'The following databases in the @FileGroups parameter do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
+  SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
+                         WITHIN GROUP (ORDER BY DatabaseName ASC)
   FROM @SelectedObjects
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
@@ -5796,7 +5789,8 @@ BEGIN
     SELECT 'The following databases in the @Objects parameter do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(AvailabilityGroupName), ', ')
+  SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(AvailabilityGroupName) AS nvarchar(max)), ', ')
+                         WITHIN GROUP (ORDER BY AvailabilityGroupName ASC)
   FROM @SelectedAvailabilityGroups
   WHERE AvailabilityGroupName NOT LIKE '%[%]%'
   AND AvailabilityGroupName NOT IN (SELECT AvailabilityGroupName FROM @tmpAvailabilityGroups)
@@ -5807,7 +5801,8 @@ BEGIN
     SELECT 'The following availability groups do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
+  SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
+                         WITHIN GROUP (ORDER BY DatabaseName ASC)
   FROM @SelectedFileGroups
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName IN (SELECT DatabaseName FROM @tmpDatabases)
@@ -5819,7 +5814,8 @@ BEGIN
     SELECT 'The following databases have been selected in the @FileGroups parameter, but not in the @Databases or @AvailabilityGroups parameters: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
+  SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
+                         WITHIN GROUP (ORDER BY DatabaseName ASC)
   FROM @SelectedObjects
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName IN (SELECT DatabaseName FROM @tmpDatabases)
@@ -6061,17 +6057,17 @@ BEGIN
                DatabaseName
         FROM @tmpDatabases tmpDatabases
         WHERE Selected = 1
-        AND NOT EXISTS (SELECT * FROM dbo.QueueDatabase WHERE DatabaseName = tmpDatabases.DatabaseName AND QueueID = @QueueID)
+        AND NOT EXISTS (SELECT * FROM dbo.QueueDatabase WHERE DatabaseName COLLATE DATABASE_DEFAULT = tmpDatabases.DatabaseName AND QueueID = @QueueID)
 
         DELETE QueueDatabase
         FROM dbo.QueueDatabase QueueDatabase
         WHERE QueueID = @QueueID
-        AND NOT EXISTS (SELECT * FROM @tmpDatabases tmpDatabases WHERE DatabaseName = QueueDatabase.DatabaseName AND Selected = 1)
+        AND NOT EXISTS (SELECT * FROM @tmpDatabases tmpDatabases WHERE DatabaseName = QueueDatabase.DatabaseName COLLATE DATABASE_DEFAULT AND Selected = 1)
 
         UPDATE QueueDatabase
         SET DatabaseOrder = tmpDatabases.[Order]
         FROM dbo.QueueDatabase QueueDatabase
-        INNER JOIN @tmpDatabases tmpDatabases ON QueueDatabase.DatabaseName = tmpDatabases.DatabaseName
+        INNER JOIN @tmpDatabases tmpDatabases ON QueueDatabase.DatabaseName COLLATE DATABASE_DEFAULT = tmpDatabases.DatabaseName
         WHERE QueueID = @QueueID
       END
 
@@ -6102,7 +6098,7 @@ BEGIN
   ----------------------------------------------------------------------------------------------------
 
   WHILE (1 = 1)
-  BEGIN
+  BEGIN -- Start of database loop
 
     IF @DatabasesInParallel = 'Y'
     BEGIN
@@ -6149,7 +6145,7 @@ BEGIN
 
     IF @@ROWCOUNT = 0
     BEGIN
-     BREAK
+      BREAK
     END
 
     SET @CurrentDatabase_sp_executesql = QUOTENAME(@CurrentDatabaseName) + '.sys.sp_executesql'
@@ -6372,7 +6368,8 @@ BEGIN
         UPDATE tmpFileGroups
         SET [Order] = RowNumber
 
-        SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName) + '.' + QUOTENAME(FileGroupName), ', ')
+        SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)) + '.' + QUOTENAME(FileGroupName), ', ')
+                               WITHIN GROUP (ORDER BY DatabaseName ASC, FileGroupName ASC)
         FROM @SelectedFileGroups SelectedFileGroups
         WHERE DatabaseName = @CurrentDatabaseName
         AND FileGroupName NOT LIKE '%[%]%'
@@ -6382,7 +6379,6 @@ BEGIN
         BEGIN
           SET @ErrorMessage = 'The following file groups do not exist: ' + @ErrorMessage + '.'
           RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
-          SET @Error = @@ERROR
           RAISERROR(@EmptyLine,10,1) WITH NOWAIT
         END
 
@@ -6538,7 +6534,8 @@ BEGIN
         UPDATE tmpObjects
         SET [Order] = RowNumber
 
-        SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName) + '.' + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName), ', ')
+        SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)) + '.' + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName), ', ')
+                               WITHIN GROUP (ORDER BY DatabaseName ASC, SchemaName ASC, ObjectName ASC)
         FROM @SelectedObjects SelectedObjects
         WHERE DatabaseName = @CurrentDatabaseName
         AND SchemaName NOT LIKE '%[%]%'
@@ -6549,7 +6546,6 @@ BEGIN
         BEGIN
           SET @ErrorMessage = 'The following objects do not exist: ' + @ErrorMessage + '.'
           RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
-          SET @Error = @@ERROR
           RAISERROR(@EmptyLine,10,1) WITH NOWAIT
         END
 
@@ -6664,6 +6660,7 @@ BEGIN
       SET @ErrorMessage = 'The database ' + QUOTENAME(@CurrentDatabaseName) + ' is in a SUSPECT state.'
       RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
       SET @Error = @@ERROR
+      SET @ReturnCode = @Error
       RAISERROR(@EmptyLine,10,1) WITH NOWAIT
     END
 
@@ -6716,7 +6713,7 @@ BEGIN
     DELETE FROM @tmpFileGroups
     DELETE FROM @tmpObjects
 
-  END
+  END -- End of database loop
 
   ----------------------------------------------------------------------------------------------------
   --// Log completing information                                                                 //--
@@ -6796,7 +6793,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-29 20:49:12                                                               //--
+  --// Version: 2026-07-04 20:57:51                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6910,8 +6907,8 @@ BEGIN
   DECLARE @CurrentDelay datetime
 
   DECLARE @tmpDatabases TABLE (ID int IDENTITY,
-                               DatabaseName nvarchar(max),
-                               DatabaseType nvarchar(max),
+                               DatabaseName nvarchar(128),
+                               DatabaseType nvarchar(1),
                                AvailabilityGroup bit,
                                StartPosition int,
                                DatabaseSize bigint,
@@ -6921,12 +6918,12 @@ BEGIN
                                PRIMARY KEY (Selected, Completed, [Order], ID))
 
   DECLARE @tmpAvailabilityGroups TABLE (ID int IDENTITY PRIMARY KEY,
-                                        AvailabilityGroupName nvarchar(max),
+                                        AvailabilityGroupName nvarchar(128),
                                         StartPosition int,
                                         Selected bit DEFAULT 0)
 
-  DECLARE @tmpDatabasesAvailabilityGroups TABLE (DatabaseName nvarchar(max),
-                                                 AvailabilityGroupName nvarchar(max))
+  DECLARE @tmpDatabasesAvailabilityGroups TABLE (DatabaseName nvarchar(128),
+                                                 AvailabilityGroupName nvarchar(128))
 
   DECLARE @tmpIndexesStatistics TABLE (ID int IDENTITY,
                                        SchemaID int,
@@ -6980,13 +6977,20 @@ BEGIN
                                      IsTimestamp bit,
                                      PRIMARY KEY (ObjectID, IndexID))
 
+  DECLARE @tmpIndexStatisticsProperties TABLE (ObjectID int NOT NULL,
+                                               StatisticsID int NOT NULL,
+                                               StatisticsName nvarchar(128),
+                                               [NoRecompute] bit,
+                                               IsIncremental bit,
+                                               PRIMARY KEY (ObjectID, StatisticsID))
+
   DECLARE @tmpResumableOperations TABLE (ObjectID int NOT NULL,
                                          IndexID int NOT NULL,
                                          PartitionNumber int)
 
   DECLARE @SelectedDatabases TABLE (DatabaseName nvarchar(max),
-                                    DatabaseType nvarchar(max),
-                                    AvailabilityGroup nvarchar(max),
+                                    DatabaseType nvarchar(1),
+                                    AvailabilityGroup bit,
                                     StartPosition int,
                                     Selected bit)
 
@@ -7703,7 +7707,7 @@ BEGIN
   IF @Resumable = 'Y' AND @SortInTempdb = 'Y'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'You can only specify one of the parameters @Resumable and @SortInTempdb.', 16, 3
+    SELECT 'You can only specify one of the parameters @Resumable and @SortInTempdb.', 16, 2
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -7840,12 +7844,24 @@ BEGIN
     SELECT 'The value for the parameter @Delay is not supported.', 16, 1
   END
 
+  IF @Delay >= 86400
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @Delay is not supported.', 16, 2
+  END
+
   ----------------------------------------------------------------------------------------------------
 
   IF @LockTimeout < 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @LockTimeout is not supported.', 16, 1
+  END
+
+  IF @LockTimeout > 86400
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @LockTimeout is not supported.', 16, 2
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -7928,7 +7944,8 @@ BEGIN
   --// Check that selected databases and availability groups exist                                //--
   ----------------------------------------------------------------------------------------------------
 
-  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
+  SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
+                         WITHIN GROUP (ORDER BY DatabaseName ASC)
   FROM @SelectedDatabases
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
@@ -7939,7 +7956,8 @@ BEGIN
     SELECT 'The following databases in the @Databases parameter do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
+  SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
+                         WITHIN GROUP (ORDER BY DatabaseName ASC)
   FROM @SelectedIndexes
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
@@ -7950,7 +7968,8 @@ BEGIN
     SELECT 'The following databases in the @Indexes parameter do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(AvailabilityGroupName), ', ')
+  SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(AvailabilityGroupName) AS nvarchar(max)), ', ')
+                         WITHIN GROUP (ORDER BY AvailabilityGroupName ASC)
   FROM @SelectedAvailabilityGroups
   WHERE AvailabilityGroupName NOT LIKE '%[%]%'
   AND AvailabilityGroupName NOT IN (SELECT AvailabilityGroupName FROM @tmpAvailabilityGroups)
@@ -7961,7 +7980,8 @@ BEGIN
     SELECT 'The following availability groups do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
+  SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
+                         WITHIN GROUP (ORDER BY DatabaseName ASC)
   FROM @SelectedIndexes
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName IN (SELECT DatabaseName FROM @tmpDatabases)
@@ -8129,17 +8149,17 @@ BEGIN
                DatabaseName
         FROM @tmpDatabases tmpDatabases
         WHERE Selected = 1
-        AND NOT EXISTS (SELECT * FROM dbo.QueueDatabase WHERE DatabaseName = tmpDatabases.DatabaseName AND QueueID = @QueueID)
+        AND NOT EXISTS (SELECT * FROM dbo.QueueDatabase WHERE DatabaseName COLLATE DATABASE_DEFAULT = tmpDatabases.DatabaseName AND QueueID = @QueueID)
 
         DELETE QueueDatabase
         FROM dbo.QueueDatabase QueueDatabase
         WHERE QueueID = @QueueID
-        AND NOT EXISTS (SELECT * FROM @tmpDatabases tmpDatabases WHERE DatabaseName = QueueDatabase.DatabaseName AND Selected = 1)
+        AND NOT EXISTS (SELECT * FROM @tmpDatabases tmpDatabases WHERE DatabaseName = QueueDatabase.DatabaseName COLLATE DATABASE_DEFAULT AND Selected = 1)
 
         UPDATE QueueDatabase
         SET DatabaseOrder = tmpDatabases.[Order]
         FROM dbo.QueueDatabase QueueDatabase
-        INNER JOIN @tmpDatabases tmpDatabases ON QueueDatabase.DatabaseName = tmpDatabases.DatabaseName
+        INNER JOIN @tmpDatabases tmpDatabases ON QueueDatabase.DatabaseName COLLATE DATABASE_DEFAULT = tmpDatabases.DatabaseName
         WHERE QueueID = @QueueID
       END
 
@@ -8170,7 +8190,7 @@ BEGIN
   ----------------------------------------------------------------------------------------------------
 
   WHILE (1 = 1)
-  BEGIN
+  BEGIN -- Start of database loop
 
     IF @DatabasesInParallel = 'Y'
     BEGIN
@@ -8346,6 +8366,8 @@ BEGIN
     BEGIN
       SET @DatabaseMessage = 'The user ' + QUOTENAME(@ExecuteAsUser) + ' does not exist in the database ' + QUOTENAME(@CurrentDatabaseName) + '.'
       RAISERROR('%s',16,1,@DatabaseMessage) WITH NOWAIT
+      SET @Error = @@ERROR
+      SET @ReturnCode = @Error
       RAISERROR(@EmptyLine,10,1) WITH NOWAIT
     END
 
@@ -8389,17 +8411,12 @@ BEGIN
                               + ' WHEN EXISTS (SELECT * FROM sys.indexes indexes2 INNER JOIN sys.filegroups filegroups ON indexes.data_space_id = filegroups.data_space_id WHERE filegroups.is_read_only = 1 AND indexes.[object_id] = indexes2.[object_id] AND indexes.[index_id] = indexes2.index_id) THEN 1'
                               + ' WHEN indexes.[type] = 1 AND EXISTS (SELECT * FROM sys.tables tables INNER JOIN sys.filegroups filegroups ON tables.lob_data_space_id = filegroups.data_space_id WHERE filegroups.is_read_only = 1 AND tables.[object_id] = objects.[object_id]) THEN 1 ELSE 0 END AS OnReadOnlyFileGroup' ELSE ', 0 AS OnReadOnlyFileGroup' END
                               + ', 0 AS ResumableIndexOperation'
-                              + ', stats.stats_id AS StatisticsID'
-                              + ', stats.name AS StatisticsName'
-                              + ', stats.no_recompute AS NoRecompute'
-                              + ', stats.is_incremental AS IsIncremental'
                               + ', ' + CASE WHEN @PartitionLevel = 'Y' THEN 'partitions.partition_id AS PartitionID' WHEN @PartitionLevel = 'N' THEN 'NULL AS PartitionID' END
                               + ', ' + CASE WHEN @PartitionLevel = 'Y' THEN 'partitions.partition_number AS PartitionNumber' WHEN @PartitionLevel = 'N' THEN 'NULL AS PartitionNumber' END
                               + ' FROM sys.indexes indexes'
                               + ' INNER JOIN sys.objects objects ON indexes.[object_id] = objects.[object_id]'
                               + ' INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id]'
                               + ' INNER JOIN sys.tables tables ON objects.[object_id] = tables.[object_id]'
-                              + ' INNER JOIN sys.stats stats ON indexes.[object_id] = stats.[object_id] AND indexes.[index_id] = stats.[stats_id]'
           IF @PartitionLevel = 'Y'
           BEGIN
             SET @CurrentCommand += ' INNER JOIN sys.partitions partitions ON indexes.[object_id] = partitions.[object_id] AND indexes.index_id = partitions.index_id'
@@ -8411,7 +8428,7 @@ BEGIN
                                + ' AND indexes.is_disabled = 0'
                                + ' AND indexes.is_hypothetical = 0'
 
-          INSERT INTO @tmpIndexesStatistics (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, IndexID, IndexName, IndexType, AllowPageLocks, HasFilter, OnReadOnlyFileGroup, ResumableIndexOperation, StatisticsID, StatisticsName, [NoRecompute], IsIncremental, PartitionID, PartitionNumber)
+          INSERT INTO @tmpIndexesStatistics (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, IndexID, IndexName, IndexType, AllowPageLocks, HasFilter, OnReadOnlyFileGroup, ResumableIndexOperation, PartitionID, PartitionNumber)
           EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
           SET @Error = @@ERROR
           IF @Error <> 0
@@ -8548,13 +8565,43 @@ BEGIN
           END
 
           -- Select paused resumable index operations
-          SET @CurrentCommand = 'SELECT index_resumable_operations.object_id AS ObjectID'
-                                + ', index_resumable_operations.index_id AS IndexID'
-                                + ', ' + CASE WHEN @PartitionLevel = 'Y' THEN 'index_resumable_operations.partition_number AS PartitionNumber' WHEN @PartitionLevel = 'N' THEN 'NULL AS PartitionNumber' END
-                                + ' FROM sys.index_resumable_operations index_resumable_operations'
-                                + ' WHERE index_resumable_operations.state_desc = ''PAUSED'''
+          SET @CurrentCommand = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;'
+                              + ' SELECT index_resumable_operations.object_id AS ObjectID'
+                              + ', index_resumable_operations.index_id AS IndexID'
+                              + ', ' + CASE WHEN @PartitionLevel = 'Y' THEN 'index_resumable_operations.partition_number AS PartitionNumber' WHEN @PartitionLevel = 'N' THEN 'NULL AS PartitionNumber' END
+                              + ' FROM sys.index_resumable_operations index_resumable_operations'
+                              + ' WHERE index_resumable_operations.state_desc = ''PAUSED'''
 
           INSERT INTO @tmpResumableOperations (ObjectID, IndexID, PartitionNumber)
+          EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
+          SET @Error = @@ERROR
+          IF @Error <> 0
+          BEGIN
+            SET @ReturnCode = @Error
+          END
+        END
+
+        IF @UpdateStatistics IN('ALL','INDEX')
+        BEGIN
+          -- Select statistics on indexes on tables
+          SET @CurrentCommand = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;'
+                              + ' SELECT stats.[object_id] AS ObjectID'
+                              + ', stats.stats_id AS StatisticsID'
+                              + ', stats.name AS StatisticsName'
+                              + ', stats.no_recompute AS NoRecompute'
+                              + ', stats.is_incremental AS IsIncremental'
+                              + ' FROM sys.stats stats'
+                              + ' INNER JOIN sys.indexes indexes ON stats.[object_id] = indexes.[object_id] AND stats.stats_id = indexes.index_id'
+                              + ' INNER JOIN sys.objects objects ON indexes.[object_id] = objects.[object_id]'
+                              + ' INNER JOIN sys.tables tables ON objects.[object_id] = tables.[object_id]'
+                              + ' WHERE objects.[type] = ''U'''
+                              + ' AND tables.is_external = 0'
+                              + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END
+                              + ' AND indexes.[type] IN(1,2,5,6,7)'
+                              + ' AND indexes.is_disabled = 0'
+                              + ' AND indexes.is_hypothetical = 0'
+
+          INSERT INTO @tmpIndexStatisticsProperties (ObjectID, StatisticsID, StatisticsName, [NoRecompute], IsIncremental)
           EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
           SET @Error = @@ERROR
           IF @Error <> 0
@@ -8632,6 +8679,15 @@ BEGIN
         END
 
         UPDATE tmpIndexesStatistics
+        SET tmpIndexesStatistics.StatisticsID = tmpIndexStatisticsProperties.StatisticsID,
+            tmpIndexesStatistics.StatisticsName = tmpIndexStatisticsProperties.StatisticsName,
+            tmpIndexesStatistics.[NoRecompute] = tmpIndexStatisticsProperties.[NoRecompute],
+            tmpIndexesStatistics.IsIncremental = tmpIndexStatisticsProperties.IsIncremental
+        FROM @tmpIndexesStatistics tmpIndexesStatistics
+        INNER JOIN @tmpIndexStatisticsProperties tmpIndexStatisticsProperties ON tmpIndexesStatistics.ObjectID = tmpIndexStatisticsProperties.ObjectID AND tmpIndexesStatistics.IndexID = tmpIndexStatisticsProperties.StatisticsID
+        OPTION (RECOMPILE)
+
+        UPDATE tmpIndexesStatistics
         SET tmpIndexesStatistics.IsImageText = tmpIndexProperties.IsImageText,
             tmpIndexesStatistics.IsNewLOB = tmpIndexProperties.IsNewLOB,
             tmpIndexesStatistics.IsFileStream = tmpIndexProperties.IsFileStream,
@@ -8706,7 +8762,8 @@ BEGIN
         UPDATE tmpIndexesStatistics
         SET [Order] = RowNumber
 
-        SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName) + '.' + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName), ', ')
+        SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)) + '.' + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName), ', ')
+                               WITHIN GROUP (ORDER BY DatabaseName ASC, SchemaName ASC, ObjectName ASC)
         FROM @SelectedIndexes SelectedIndexes
         WHERE DatabaseName = @CurrentDatabaseName
         AND SchemaName NOT LIKE '%[%]%'
@@ -8718,11 +8775,11 @@ BEGIN
         BEGIN
           SET @ErrorMessage = 'The following objects in the @Indexes parameter do not exist: ' + @ErrorMessage + '.'
           RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
-          SET @Error = @@ERROR
           RAISERROR(@EmptyLine,10,1) WITH NOWAIT
         END
 
-        SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName) + '.' + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName) + '.' + QUOTENAME(IndexName), ', ')
+        SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)) + '.' + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName) + '.' + QUOTENAME(IndexName), ', ')
+                               WITHIN GROUP (ORDER BY DatabaseName ASC, SchemaName ASC, ObjectName ASC, IndexName ASC)
         FROM @SelectedIndexes SelectedIndexes
         WHERE DatabaseName = @CurrentDatabaseName
         AND SchemaName NOT LIKE '%[%]%'
@@ -8734,7 +8791,6 @@ BEGIN
         BEGIN
           SET @ErrorMessage = 'The following indexes in the @Indexes parameter do not exist: ' + @ErrorMessage + '.'
           RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
-          SET @Error = @@ERROR
           RAISERROR(@EmptyLine,10,1) WITH NOWAIT
         END
       END
@@ -9073,7 +9129,7 @@ BEGIN
 
         -- Should the statistics be updated? - Pre checks and final decision
         IF @CurrentStatisticsID IS NOT NULL
-        AND ((@UpdateStatistics = 'ALL' AND (@CurrentIndexType IN (1,2,3,4,7) OR @CurrentIndexID IS NULL)) OR (@UpdateStatistics = 'INDEX' AND @CurrentIndexID IS NOT NULL AND @CurrentIndexType IN (1,2,3,4,7)) OR (@UpdateStatistics = 'COLUMNS' AND @CurrentIndexID IS NULL))
+        AND ((@UpdateStatistics = 'ALL' AND (@CurrentIndexType IN (1,2,7) OR @CurrentIndexID IS NULL)) OR (@UpdateStatistics = 'INDEX' AND @CurrentIndexID IS NOT NULL AND @CurrentIndexType IN (1,2,7)) OR (@UpdateStatistics = 'COLUMNS' AND @CurrentIndexID IS NULL))
         AND ((@CurrentIsPartition = 0 AND (@CurrentAction NOT IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') OR @CurrentAction IS NULL)) OR (@CurrentIsPartition = 1 AND (@CurrentPartitionNumber = @CurrentPartitionCount OR (@PartitionLevel = 'Y' AND @CurrentIsIncremental = 1))))
         BEGIN
           -- Does the statistics exist?
@@ -9361,8 +9417,9 @@ BEGIN
     BEGIN
       SET @ErrorMessage = 'The database ' + QUOTENAME(@CurrentDatabaseName) + ' is in a SUSPECT state.'
       RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
-      RAISERROR(@EmptyLine,10,1) WITH NOWAIT
       SET @Error = @@ERROR
+      SET @ReturnCode = @Error
+      RAISERROR(@EmptyLine,10,1) WITH NOWAIT
     END
 
     -- Update that the database is completed
@@ -9411,9 +9468,10 @@ BEGIN
     DELETE FROM @tmpIndexesStatistics
     DELETE FROM @tmpObjectProperties
     DELETE FROM @tmpIndexProperties
+    DELETE FROM @tmpIndexStatisticsProperties
     DELETE FROM @tmpResumableOperations
 
-  END
+  END -- End of database loop
 
   ----------------------------------------------------------------------------------------------------
   --// Log completing information                                                                 //--
