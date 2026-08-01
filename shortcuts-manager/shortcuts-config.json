@@ -1,0 +1,177 @@
+{
+  "username": "a.turelli",
+  "applications": {
+    "edge": {
+      "label": "Microsoft Edge",
+      "path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"
+    },
+    "excel": {
+      "label": "Microsoft Excel",
+      "path": "C:\\Program Files\\Microsoft Office\\root\\Office16\\EXCEL.EXE"
+    },
+    "ssms": {
+      "label": "SQL Server Management Studio",
+      "path": "C:\\Program Files\\Microsoft SQL Server Management Studio 22\\Release\\Common7\\IDE\\SSMS.exe"
+    },
+    "visualstudio2019": {
+      "label": "Visual Studio 2019 Community",
+      "path": "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\Common7\\IDE\\devenv.exe"
+    },
+    "visualstudio2022": {
+      "label": "Visual Studio 2022 Community",
+      "path": "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\Common7\\IDE\\devenv.exe"
+    },
+    "visualstudio": {
+      "label": "Visual Studio 2026 Community",
+      "path": "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\Common7\\IDE\\devenv.exe"
+    },
+    "vscode": {
+      "label": "Visual Studio Code",
+      "path": "C:\\Program Files\\Microsoft VS Code\\Code.exe"
+    },
+    "powerbi": {
+      "label": "Power BI Desktop",
+      "path": "C:\\Users\\{username}\\AppData\\Local\\Microsoft\\WindowsApps\\PBIDesktopStore.exe"
+    },
+    "chrome": {
+      "label": "Google Chrome",
+      "path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+    }
+  },
+  "customers": [
+    {
+      "name": "Cesi Multimedia",
+      "shortcutsDir": "C:\\Work\\Cesi Multimedia",
+      "domain": "CESI",
+      "user": "sadmin",
+      "applications": [
+        {
+          "app": "excel",
+          "label": "Excel – Cesi Multimedia"
+        },
+        {
+          "app": "ssms",
+          "label": "SSMS – Cesi Multimedia",
+          "extraArgs": [ "C:\\Work.Git\\Cesi Multimedia\\Cesi\\Scripts\\SQL\\CesiDW.sln" ]
+        },
+        {
+          "app": "visualstudio2019",
+          "label": "Visual Studio 2019 – Cesi Multimedia",
+          "extraArgs": [ "C:\\Work.Git\\Cesi Multimedia\\Cesi\\Business Intelligence\\CesiBI.sln" ]
+        }
+      ]
+    },
+    {
+      "name": "Metra",
+      "shortcutsDir": "C:\\Work\\Metra",
+      "domain": "METRA",
+      "user": "a.turelli",
+      "applications": [
+        {
+          "app": "excel",
+          "label": "Excel – Metra"
+        },
+        {
+          "app": "ssms",
+          "label": "SSMS – Metra",
+          "extraArgs": [ "C:\\Work.Git\\Metra\\Scripts.SQL\\METRADW\\METRADW.sln" ]
+        },
+        {
+          "app": "visualstudio2019",
+          "label": "Visual Studio 2019 – Metra",
+          "extraArgs": [ "C:\\Work.Git\\Metra\\BI.METRADW2019\\METRADW2019.sln" ]
+        },
+        {
+          "app": "visualstudio",
+          "label": "Visual Studio – Metra"
+        },
+        {
+          "app": "powerbi",
+          "label": "Power BI Desktop – Metra"
+        }
+      ]
+    },
+    {
+      "name": "Berg",
+      "shortcutsDir": "C:\\Work\\CodicePlastico\\Berg",
+      "domain": "SQLSRV",
+      "user": "cpadmin",
+      "applications": [
+        {
+          "app": "ssms",
+          "label": "SSMS – Berg"
+        },
+        {
+          "app": "visualstudio2019",
+          "label": "Visual Studio 2019 – Berg"
+        }
+      ]
+    },
+    {
+      "name": "Fraternità Sistemi",
+      "shortcutsDir": "C:\\Work\\CodicePlastico\\Fraternità Sistemi",
+      "domain": "SISTEMI",
+      "user": "ext_turelli",
+      "applications": [
+        {
+          "app": "ssms",
+          "label": "SSMS – Fraternità Sistemi",
+          "extraArgs": [ "C:\\Work.Git\\CodicePlastico\\Fraternità Sistemi\\FS_DWH\\SSMS\\Fraternita.slnx" ]
+        },
+        {
+          "app": "visualstudio2019",
+          "label": "Visual Studio 2019 – Fraternità Sistemi",
+          "extraArgs": [ "C:\\Work.Git\\CodicePlastico\\Fraternità Sistemi\\FS_DWH\\VS\\Fraternita.sln" ]
+        },
+        {
+          "app": "powerbi",
+          "label": "Power BI Desktop – Fraternità Sistemi"
+        }
+      ]
+    },
+    {
+      "name": "Lordgun",
+      "shortcutsDir": "C:\\Work\\CodicePlastico\\Lordgun",
+      "domain": "LORDGUN.LOC",
+      "user": "alberto.turelli",
+      "applications": [
+        {
+          "app": "excel",
+          "label": "Excel – Lordgun"
+        },
+        {
+          "app": "ssms",
+          "label": "SSMS – Lordgun",
+          "extraArgs": [ "C:\\Work.Git\\CodicePlastico\\Lordgun\\JSport.DataWarehouse\\SSMS\\Lordgun.sln" ]
+        },
+        {
+          "app": "visualstudio2019",
+          "label": "Visual Studio 2019 – Lordgun",
+          "extraArgs": [ "C:\\Work.Git\\CodicePlastico\\Lordgun\\JSport.DataWarehouse\\VS\\Lordgun.sln" ]
+        }
+      ]
+    },
+    {
+      "name": "NSA",
+      "shortcutsDir": "C:\\Work\\CodicePlastico\\NSA",
+      "domain": "NSA",
+      "user": "adminaturelli",
+      "applications": [
+        {
+          "app": "ssms",
+          "label": "SSMS – NSA",
+          "extraArgs": [ "C:\\Work.Git\\CodicePlastico\\NSA\\nsa-dwh\\SSMS\\NSADW.slnx" ]
+        },
+        {
+          "app": "visualstudio2019",
+          "label": "Visual Studio 2019 – NSA",
+          "extraArgs": [ "C:\\Work.Git\\CodicePlastico\\NSA\\FS_DWH\\VS\\NSADW\\NSADW.sln" ]
+        },
+        {
+          "app": "powerbi",
+          "label": "Power BI Desktop – NSA"
+        }
+      ]
+    }
+  ]
+}

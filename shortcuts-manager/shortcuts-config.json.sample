@@ -1,0 +1,81 @@
+{
+  "username": "USERNAME",
+  "applications": {
+    "ssms": {
+      "label": "SQL Server Management Studio",
+      "path": "C:\\Program Files\\Microsoft SQL Server Management Studio 22\\Release\\Common7\\IDE\\SSMS.exe"
+    },
+    "vscode": {
+      "label": "Visual Studio Code",
+      "path": "C:\\Program Files\\Microsoft VS Code\\Code.exe"
+    },
+    "visualstudio2019": {
+      "label": "Visual Studio 2019 Community",
+      "path": "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\Common7\\IDE\\devenv.exe"
+    },
+    "visualstudio2022": {
+      "label": "Visual Studio 2022 Community",
+      "path": "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\Common7\\IDE\\devenv.exe"
+    },
+    "visualstudio": {
+      "label": "Visual Studio 2026 Community",
+      "path": "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\Common7\\IDE\\devenv.exe"
+    },
+    "powerbi": {
+      "label": "Power BI Desktop",
+      "path": "C:\\Users\\{username}\\AppData\\Local\\Microsoft\\WindowsApps\\PBIDesktopStore.exe"
+    },
+    "edge": {
+      "label": "Microsoft Edge",
+      "path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"
+    },
+    "chrome": {
+      "label": "Google Chrome",
+      "path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+    },
+    "excel": {
+      "label": "Microsoft Excel",
+      "path": "C:\\Program Files\\Microsoft Office\\root\\Office16\\EXCEL.EXE"
+    }
+  },
+  "customers": [
+    {
+      "name": "CustomerA",
+      "shortcutsDir": "C:\\Shortcuts\\CustomerA",
+      "domain": "DOMAINA",
+      "user": "userA",
+      "applications": [
+        {
+          "app": "ssms",
+          "label": "SSMS – CustomerA",
+          "extraArgs": [ "C:\\Projects\\CustomerA\\CustomerA.ssmssln" ]
+        },
+        {
+          "app": "vscode",
+          "label": "VS Code – CustomerA"
+        },
+        {
+          "app": "powerbi",
+          "label": "Power BI – CustomerA"
+        }
+      ]
+    },
+    {
+      "name": "CustomerB",
+      "shortcutsDir": "C:\\Shortcuts\\CustomerB",
+      "domain": "DOMAINB",
+      "user": "userB",
+      "applications": [
+        {
+          "app": "ssms",
+          "label": "SSMS – CustomerB",
+          "extraArgs": [ "C:\\Projects\\CustomerB\\CustomerB.ssmssln" ]
+        },
+        {
+          "app": "visualstudio",
+          "label": "Visual Studio – CustomerB"
+        }
+      ]
+    }
+  ]
+}
