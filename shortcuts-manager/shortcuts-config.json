@@ -42,8 +42,7 @@
     {
       "name": "Cesi Multimedia",
       "shortcutsDir": "C:\\Work\\Cesi Multimedia",
-      "domain": "CESI",
-      "user": "sadmin",
+      "credentialName": "shortcuts/cesi-multimedia",
       "applications": [
         {
           "app": "excel",
@@ -64,8 +63,7 @@
     {
       "name": "Metra",
       "shortcutsDir": "C:\\Work\\Metra",
-      "domain": "METRA",
-      "user": "a.turelli",
+      "credentialName": "shortcuts/metra",
       "applications": [
         {
           "app": "excel",
@@ -94,8 +92,7 @@
     {
       "name": "Berg",
       "shortcutsDir": "C:\\Work\\CodicePlastico\\Berg",
-      "domain": "SQLSRV",
-      "user": "cpadmin",
+      "credentialName": "shortcuts/berg",
       "applications": [
         {
           "app": "ssms",
@@ -110,8 +107,7 @@
     {
       "name": "Fraternità Sistemi",
       "shortcutsDir": "C:\\Work\\CodicePlastico\\Fraternità Sistemi",
-      "domain": "SISTEMI",
-      "user": "ext_turelli",
+      "credentialName": "shortcuts/fraternita-sistemi",
       "applications": [
         {
           "app": "ssms",
@@ -132,8 +128,7 @@
     {
       "name": "Lordgun",
       "shortcutsDir": "C:\\Work\\CodicePlastico\\Lordgun",
-      "domain": "LORDGUN.LOC",
-      "user": "alberto.turelli",
+      "credentialName": "shortcuts/lordgun",
       "applications": [
         {
           "app": "excel",
@@ -154,8 +149,7 @@
     {
       "name": "NSA",
       "shortcutsDir": "C:\\Work\\CodicePlastico\\NSA",
-      "domain": "NSA",
-      "user": "adminaturelli",
+      "credentialName": "shortcuts/nsa",
       "applications": [
         {
           "app": "ssms",

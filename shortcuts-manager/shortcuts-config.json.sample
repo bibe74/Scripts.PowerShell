@@ -42,8 +42,7 @@
     {
       "name": "CustomerA",
       "shortcutsDir": "C:\\Shortcuts\\CustomerA",
-      "domain": "DOMAINA",
-      "user": "userA",
+      "credentialName": "shortcuts/customer-a",
       "applications": [
         {
           "app": "ssms",
@@ -63,8 +62,7 @@
     {
       "name": "CustomerB",
       "shortcutsDir": "C:\\Shortcuts\\CustomerB",
-      "domain": "DOMAINB",
-      "user": "userB",
+      "credentialName": "shortcuts/customer-b",
       "applications": [
         {
           "app": "ssms",
