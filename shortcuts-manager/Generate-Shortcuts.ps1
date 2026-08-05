@@ -2,23 +2,8 @@
 <#
 .SYNOPSIS
     Generates Windows .lnk shortcuts for each customer/application pair defined
-    in shortcuts-config.json. Each shortcut launches a per-shortcut PowerShell
-    script that retrieves credentials from Windows Credential Manager and starts
-    the application via Start-Process -Credential.
-
-.DESCRIPTION
-    Credentials must be pre-stored in Windows Credential Manager by running
-    Store-Credentials.ps1. Each customer entry in shortcuts-config.json
-    references a credential by its Credential Manager target name
-    (credentialName field).
-
-    For each shortcut a companion launcher .ps1 is written to a _launchers
-    sub-folder inside the customer's shortcutsDir. The .lnk calls powershell.exe
-    to invoke that launcher invisibly.
-
-    Requires the CredentialManager PowerShell module at runtime (installed
-    automatically by Store-Credentials.ps1, or manually via
-    Install-Module CredentialManager -Scope CurrentUser).
+    in shortcuts-config.json, each launching the application via runas.exe with
+    the customer's Windows credentials.
 
 .PARAMETER ConfigFile
     Path to the JSON configuration file. Defaults to shortcuts-config.json in
@@ -62,61 +47,23 @@ function Write-Ok {
     Write-Host "  [OK]   $Message" -ForegroundColor Green
 }
 
-# Writes a self-contained PowerShell launcher script for a single shortcut.
-function Write-LauncherScript {
+# Builds the Arguments string for a runas.exe shortcut.
+# runas expects: /netonly /user:DOMAIN\user "app.exe \"arg1\" \"arg2\""
+function Build-RunasArguments {
     param(
-        [string]   $ScriptPath,
-        [string]   $CredentialName,
+        [string]   $RunasUser,
         [string]   $AppPath,
         [string[]] $ExtraArgs
     )
 
-    # Serialize ExtraArgs as a PowerShell array literal
-    $ExtraArgs = @($ExtraArgs)   # normalise: null or scalar → array
-    $argsLiteral = if ($ExtraArgs.Count -eq 0) {
-        '@()'
-    } else {
-        $quoted = $ExtraArgs | ForEach-Object { "'$($_ -replace "'", "''")'" }
-        '@(' + ($quoted -join ', ') + ')'
+    # Build the inner command line that runas hands to CreateProcess.
+    # Keep the executable as-is, and escape quotes around extra args as \"...\".
+    $escapedArgs = ($ExtraArgs | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) | ForEach-Object {
+        '\"{0}\"' -f $_
     }
+    $innerCmd = (@($AppPath) + $escapedArgs) -join ' '
 
-    $escapedCred = $CredentialName -replace "'", "''"
-    $escapedApp  = $AppPath        -replace "'", "''"
-
-    $content = @"
-#Requires -Version 5.1
-`$ErrorActionPreference = 'Stop'
-try {
-    Add-Type -TypeDefinition @'
-using System; using System.Runtime.InteropServices;
-public class CredMan {
-    [StructLayout(LayoutKind.Sequential)] private struct CRED {
-        public uint Flags, Type; public IntPtr TargetName, Comment;
-        public long LastWritten; public uint BlobSize; public IntPtr Blob;
-        public uint Persist, AttrCount; public IntPtr Attrs, Alias, UserName;
-    }
-    [DllImport("advapi32",CharSet=CharSet.Unicode,SetLastError=true)]
-    static extern bool CredReadW(string t,uint type,uint f,out IntPtr p);
-    [DllImport("advapi32")] static extern void CredFree(IntPtr p);
-    public static string[] Get(string target) {
-        IntPtr p; if (!CredReadW(target,1,0,out p)) return null;
-        try { var c=(CRED)Marshal.PtrToStructure(p,typeof(CRED));
-              return new[]{Marshal.PtrToStringUni(c.UserName),
-                           Marshal.PtrToStringUni(c.Blob,(int)(c.BlobSize/2))};
-        } finally { CredFree(p); }
-    }
-}
-'@ -ErrorAction SilentlyContinue
-    `$data = [CredMan]::Get('$escapedCred')
-    if (-not `$data) { throw "Credential '$CredentialName' not found in Windows Credential Manager. Run Store-Credentials.ps1 first." }
-    `$cred = New-Object PSCredential(`$data[0], (ConvertTo-SecureString `$data[1] -AsPlainText -Force))
-    Start-Process -FilePath '$escapedApp' -ArgumentList $argsLiteral -Credential `$cred
-} catch {
-    Add-Type -AssemblyName System.Windows.Forms
-    [System.Windows.Forms.MessageBox]::Show(`$_.Exception.Message, 'Shortcuts Manager', 'OK', 'Error') | Out-Null
-}
-"@
-    Set-Content -Path $ScriptPath -Value $content -Encoding UTF8
+    return "/netonly /user:$RunasUser `"$innerCmd`""
 }
 
 # Creates a .lnk shortcut file via the WScript.Shell COM object.
@@ -135,7 +82,7 @@ function New-Shortcut {
     $shortcut.Arguments        = $Arguments
     $shortcut.IconLocation     = "$IconPath,0"
     $shortcut.Description      = $Description
-    $shortcut.WorkingDirectory = Split-Path $TargetPath
+    $shortcut.WorkingDirectory = Split-Path $IconPath
     $shortcut.Save()
     [System.Runtime.InteropServices.Marshal]::ReleaseComObject($shell) | Out-Null
 }
@@ -167,33 +114,35 @@ foreach ($appKey in ($config.applications.PSObject.Properties.Name)) {
     $app.path = $app.path -replace '\{username\}', $username
 }
 
-$powershell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+$runas = "$env:SystemRoot\System32\runas.exe"
 $totalCreated = 0
 $totalSkipped = 0
 
 # --- Process each customer --------------------------------------------------
 foreach ($customer in $config.customers) {
 
-    Write-Host "Customer: $($customer.name)" -ForegroundColor Magenta
+    $hasRunasUser = [bool]$customer.PSObject.Properties['runasUser'] -and -not [string]::IsNullOrWhiteSpace($customer.runasUser)
+    $hasDomainAndUser = -not [string]::IsNullOrWhiteSpace($customer.domain) -and -not [string]::IsNullOrWhiteSpace($customer.user)
+
+    if ($hasRunasUser) { $resolvedRunasUser = $customer.runasUser }
+    elseif ($hasDomainAndUser) { $resolvedRunasUser = "$($customer.domain)\$($customer.user)" }
+    else { $resolvedRunasUser = $null }
+
+    Write-Host "Customer: $($customer.name)  ($resolvedRunasUser)" -ForegroundColor Magenta
 
     # Validate required fields
-    if (-not $customer.name -or -not $customer.shortcutsDir -or
-        -not $customer.PSObject.Properties['credentialName'] -or -not $customer.credentialName) {
-        Write-Warn "Skipping customer – missing required field (name/shortcutsDir/credentialName)."
+    if (-not $customer.name -or -not $customer.shortcutsDir -or -not $resolvedRunasUser) {
+        Write-Warn "Skipping customer – missing required field (name/shortcutsDir and either runasUser or domain+user)."
         continue
     }
 
-    $launchersDir = Join-Path $customer.shortcutsDir '_launchers'
-
-    # Ensure the output directories exist
-    foreach ($dir in @($customer.shortcutsDir, $launchersDir)) {
-        if (-not (Test-Path $dir)) {
-            if ($DryRun) {
-                Write-Step "Would create directory: $dir"
-            } else {
-                Write-Step "Creating directory: $dir"
-                New-Item -ItemType Directory -Path $dir -Force | Out-Null
-            }
+    # Ensure the output directory exists
+    if (-not (Test-Path $customer.shortcutsDir)) {
+        if ($DryRun) {
+            Write-Step "Would create directory: $($customer.shortcutsDir)"
+        } else {
+            Write-Step "Creating directory: $($customer.shortcutsDir)"
+            New-Item -ItemType Directory -Path $customer.shortcutsDir -Force | Out-Null
         }
     }
 
@@ -216,31 +165,27 @@ foreach ($customer in $config.customers) {
             Write-Warn "Executable not found: $appPath  (shortcut will still be created)"
         }
 
+        # Determine the shortcut label
         $label        = if ($entry.PSObject.Properties['label'])     { $entry.label }      else { "$($appDef.label) – $($customer.name)" }
         $extraArgs    = if ($entry.PSObject.Properties['extraArgs']) { @($entry.extraArgs) } else { @() }
-        $launcherFile = Join-Path $launchersDir "$label.ps1"
         $shortcutFile = Join-Path $customer.shortcutsDir "$label.lnk"
-        $psArgs       = "-NonInteractive -WindowStyle Hidden -File `"$launcherFile`""
+
+        $runasArgs = Build-RunasArguments `
+            -RunasUser $resolvedRunasUser `
+            -AppPath   $appPath `
+            -ExtraArgs $extraArgs
 
         if ($DryRun) {
-            Write-Step "Would create launcher: $launcherFile"
-            Write-Step "Would create shortcut: $shortcutFile"
-            Write-Step "  Credential : $($customer.credentialName)"
-            Write-Step "  App        : $appPath"
-            if ($extraArgs.Count -gt 0) { Write-Step "  ExtraArgs  : $($extraArgs -join ' ')" }
+            Write-Step "Would create: $shortcutFile"
+            Write-Step "  Target : $runas"
+            Write-Step "  Args   : $runasArgs"
         } else {
-            Write-LauncherScript `
-                -ScriptPath     $launcherFile `
-                -CredentialName $customer.credentialName `
-                -AppPath        $appPath `
-                -ExtraArgs      $extraArgs
-
             New-Shortcut `
                 -ShortcutPath $shortcutFile `
-                -TargetPath   $powershell `
-                -Arguments    $psArgs `
+                -TargetPath   $runas `
+                -Arguments    $runasArgs `
                 -IconPath     $appPath `
-                -Description  "Run $($appDef.label) as $($customer.credentialName)"
+                -Description  "Run $($appDef.label) as $resolvedRunasUser"
 
             Write-Ok "Created: $shortcutFile"
             $totalCreated++
