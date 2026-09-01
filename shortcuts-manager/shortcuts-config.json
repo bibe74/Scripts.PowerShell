@@ -36,6 +36,10 @@
     "chrome": {
       "label": "Google Chrome",
       "path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+    },
+    "datagrip": {
+      "label": "DataGrip",
+      "path": "C:\\Program Files\\JetBrains\\DataGrip 2026.2.1\\bin\\datagrip64.exe"
     }
   },
   "customers": [
@@ -128,6 +132,10 @@
         {
           "app": "powerbi",
           "label": "Power BI Desktop – Fraternità Sistemi"
+        },
+        {
+          "app": "datagrip",
+          "label": "DataGrip – Fraternità Sistemi"
         }
       ]
     },
@@ -167,7 +175,7 @@
         {
           "app": "visualstudio2019",
           "label": "Visual Studio 2019 – NSA",
-          "extraArgs": [ "C:\\Work.Git\\CodicePlastico\\NSA\\FS_DWH\\VS\\NSADW\\NSADW.sln" ]
+          "extraArgs": [ "C:\\Work.Git\\CodicePlastico\\NSA\\nsa-dwh\\VS\\NSADW\\NSADW.sln" ]
         },
         {
           "app": "powerbi",
