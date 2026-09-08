@@ -41,6 +41,10 @@ foreach ($server in $Servers) {
         "2008R2" {$scripts_folder = "scripts_up_to_2008\\"}
         "2012" {$scripts_folder = "scripts_up_to_2014\\"}
         "2014" {$scripts_folder = "scripts_up_to_2014\\"}
+        "2016" {$scripts_folder = "scripts_up_to_2019\\"}
+        "2017" {$scripts_folder = "scripts_up_to_2019\\"}
+        "2019" {$scripts_folder = "scripts_up_to_2019\\"}
+        
         default {$scripts_folder = "scripts\\"}
     }
 

@@ -18,6 +18,10 @@ $Source = $ScriptSourceDirectoryBase + "DarlingData\\Install-All\\DarlingData.sq
 Copy-Item $Source -Destination $ScriptsDirectory
 $Source = $ScriptSourceDirectoryBase + "SQL-Server-First-Responder-Kit\\Install-All-Scripts.sql"
 #Copy-Item $Source -Destination $ScriptsDirectory
+$Source = $ScriptSourceDirectoryBase + "sql-server-maintenance-solution\\MaintenanceSolution.sql"
+Copy-Item $Source -Destination $ScriptsDirectory
+$Source = $ScriptSourceDirectoryBase + "sp_Check\\sp_CheckBackup\\sp_CheckBackup.sql"
+Copy-Item $Source -Destination $ScriptsDirectory
 
 $ScriptsDirectory = $ScriptDirectoryBase + "\\scripts_common\\"
 
@@ -29,5 +33,4 @@ $Source = $ScriptSourceDirectoryBase + "sp_Check\\sp_CheckTempdb\\sp_CheckTempdb
 Copy-Item $Source -Destination $ScriptsDirectory
 $Source = $ScriptSourceDirectoryBase + "sp_whoisactive\\sp_WhoIsActive.sql"
 Copy-Item $Source -Destination $ScriptsDirectory
-$Source = $ScriptSourceDirectoryBase + "sql-server-maintenance-solution\\MaintenanceSolution.sql"
-Copy-Item $Source -Destination $ScriptsDirectory
+
