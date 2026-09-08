@@ -27,8 +27,8 @@ DECLARE
 	, @VersionDate DATETIME = NULL
 
 SELECT
-    @Version = '2026.6.1'
-    , @VersionDate = '20260612';
+    @Version = '2026.8.2'
+    , @VersionDate = '20260811';
 
 /* Version check */
 IF @VersionCheck = 1 BEGIN
@@ -58,7 +58,11 @@ IF @Help = 1 BEGIN
     - sp_CheckBackup will work with some earlier versions of SQL Server, but it 
     will skip a few checks. The results should still be valid and helpful, but you
     should really consider upgrading to a newer version.
-    
+
+    Permissions:
+    - The minimum required is VIEW SERVER STATE. Note that some checks will be
+    skipped unless executed by a member of sysadmin.
+
     Parameters:
 
     @Mode  0=Show only problematic issues, unfiltered
@@ -152,7 +156,7 @@ IF @BackupType = 'F'
 
 /* SQL Server version check */	
 DECLARE 
-	@SQL NVARCHAR(4000)
+	@SQL NVARCHAR(MAX)
 	, @SQLVersion NVARCHAR(128)
 	, @SQLVersionMajor DECIMAL(10,2)
 	, @SQLVersionMinor DECIMAL(10,2);
@@ -851,8 +855,7 @@ VALUES
     , (4, 'Availability')
     , (5, 'Integrity')
     , (6, 'Reliability')
-    , (7, 'Performance')
-    , (8, 'Troubleshooting');
+    , (7, 'Performance');
 
 	IF OBJECT_ID('tempdb..#Results') IS NOT NULL
 		DROP TABLE #Results;
@@ -861,7 +864,7 @@ VALUES
 		CategoryID TINYINT
 		, CheckID INT
 		, [Importance] TINYINT
-		, CheckName VARCHAR(50)
+		, CheckName VARCHAR(100)
 		, Issue NVARCHAR(MAX)
 		, DatabaseName NVARCHAR(255)
 		, Details NVARCHAR(MAX)
@@ -1106,12 +1109,12 @@ VALUES
 		2
 		, 211
 		, 1
-		, 'TDE certificate never backed up'
+		, 'TDE certificate not backed up recently'
 		, 'The transparent data encryption (TDE) certificate required for restoring has never been backed up.'
 		, db_name(d.database_id)
 		, 'The certificate ' + c.name + ' used to encrypt database ' + db_name(d.database_id) + ' has never been backed up'
 		, 'Make a backup of your current certificate and store it in a secure location in case you need to restore this encrypted database.'
-		, 'https://straightpathsql.com/check/no-recent-tde-certificate-backup/'
+		, 'https://straightpathsql.com/check/no-recent-tde-certificate-backup'
 	FROM sys.certificates c 
 	INNER JOIN sys.dm_database_encryption_keys d 
 		ON c.thumbprint = d.encryptor_thumbprint
@@ -1127,7 +1130,7 @@ VALUES
 		, db_name(d.database_id)
 		, 'The certificate ' + c.name + ' used to encrypt database ' + db_name(d.database_id) + ' has not been backed up since: ' + CAST(c.pvt_key_last_backup_date AS VARCHAR(100))
 		, 'Make sure you have a recent backup of your certificate in a secure location in case you need to restore your encrypted database.'
-		, 'https://straightpathsql.com/check/no-recent-tde-certificate-backup/'
+		, 'https://straightpathsql.com/check/no-recent-tde-certificate-backup'
 	FROM sys.certificates c 
 	INNER JOIN sys.dm_database_encryption_keys d 
 		ON c.thumbprint = d.encryptor_thumbprint
@@ -1145,7 +1148,7 @@ VALUES
 		, db_name(d.database_id)
 		, 'The certificate ' + c.name + ' used to encrypt database ' + db_name(d.database_id) + ' is set to expire on: ' + CAST(c.expiry_date AS VARCHAR(100))
 		, 'Although you will still be able to backup or restore your encrypted database with an expired certificate, these should be changed regularly like passwords.'
-		, 'https://straightpathsql.com/check/tde-certificate-expiration-date/'
+		, 'https://straightpathsql.com/check/tde-certificate-expiration-date'
 	FROM sys.certificates c 
 	INNER JOIN sys.dm_database_encryption_keys d 
 		ON c.thumbprint = d.encryptor_thumbprint;
@@ -1164,7 +1167,7 @@ VALUES
 			, b.[database_name]
 			, ''The certificate '' + c.name + '' used to encrypt database backups for '' + b.[database_name] + '' has never been backed up.''
 			, ''Make sure you have a recent backup of your certificate in a secure location in case you need to restore encrypted database backups.''
-			, ''https://straightpathsql.com/check/missing-database-backup-certificate-backup/''
+			, ''https://straightpathsql.com/check/missing-database-backup-certificate-backup''
 		FROM sys.certificates c 
 		INNER JOIN msdb.dbo.backupset b
 			ON c.thumbprint = b.encryptor_thumbprint
@@ -1185,7 +1188,7 @@ VALUES
 			, b.[database_name]
 			, ''The certificate '' + c.name + '' used to encrypt database backups for '' + b.[database_name] + '' has not been backed up since: '' + CAST(c.pvt_key_last_backup_date AS VARCHAR(100))
 			, ''Make sure you have a recent backup of your certificate in a secure location in case you need to restore encrypted database backups.''
-			, ''https://straightpathsql.com/check/missing-database-backup-certificate-backup/''
+			, ''https://straightpathsql.com/check/missing-database-backup-certificate-backup''
 		FROM sys.certificates c 
 		INNER JOIN msdb.dbo.backupset b
 			ON c.thumbprint = b.encryptor_thumbprint
@@ -1207,7 +1210,7 @@ VALUES
 			, b.[database_name]
 			, ''The certificate '' + c.name + '' used to encrypt database '' + b.[database_name] + '' is set to expire on: '' + CAST(c.expiry_date AS VARCHAR(100))
 			, ''You will not be able to backup or restore your encrypted database backups with an expired certificate, so these should be changed regularly like passwords.''
-			, ''https://straightpathsql.com/check/database-backup-certificate-expiration-date/''
+			, ''https://straightpathsql.com/check/database-backup-certificate-expiration-date''
 		FROM sys.certificates c 
 		INNER JOIN msdb.dbo.backupset b
 			ON c.thumbprint = b.encryptor_thumbprint
@@ -1379,7 +1382,7 @@ VALUES
 			, vd.DatabaseName
 			, 'A high number of VLFs can cause performance issues, especially for backup/restore operations and failovers.'
 			, 'Consider resizing the log file to reduce the number of VLFs, and then grow it back out to an appropriate size with less VLFs.'
-			, 'https://straightpathsql.com/check/virtual-log-files/'
+			, 'https://straightpathsql.com/check/virtual-log-files'
 		FROM #VLFDatabases vd
 		CROSS APPLY sys.dm_db_log_stats(vd.DatabaseID) ls
 		WHERE ls.total_vlf_count > 200;
@@ -1448,11 +1451,46 @@ CREATE TABLE #DBINFO (
 	, DatabaseName NVARCHAR(128) NULL
 	);
 
-EXEC sp_MSforeachdb N'USE [?];
+/* Capture DBCC DBINFO one database at a time with an explicit cursor, so the
+   database name is escaped with QUOTENAME for the context switch and passed as
+   a typed parameter for the stamping UPDATE, instead of the sp_MSforeachdb
+   token substitution that dropped the raw name into USE [?] and N'?'. The list
+   is filtered to accessible databases (online, non-snapshot, not standby,
+   accessible to the current login via HAS_DBACCESS, updateable so non-readable
+   AG secondaries are skipped, and honoring @DatabaseName) so DBCC DBINFO is
+   never run against a database it cannot read. */
+DECLARE @DBINFODatabaseName NVARCHAR(128);
+
+DECLARE DBINFOCursor CURSOR LOCAL FAST_FORWARD FOR
+	SELECT d.[name]
+	FROM sys.databases d
+	WHERE d.state = 0                                                    /* ONLINE only */
+		AND d.source_database_id IS NULL                                 /* exclude snapshots */
+		AND d.is_in_standby = 0                                          /* exclude log shipping standby */
+		AND HAS_DBACCESS(d.[name]) = 1                                   /* skip databases the current login cannot access */
+		AND DATABASEPROPERTYEX(d.[name], 'Updateability') = 'READ_WRITE' /* skip read-only and non-readable AG secondaries (USE would raise error 976) */
+		AND d.[name] = COALESCE(@DatabaseName, d.[name]);
+
+OPEN DBINFOCursor;
+FETCH NEXT FROM DBINFOCursor INTO @DBINFODatabaseName;
+
+WHILE @@FETCH_STATUS = 0 BEGIN
+	SET @SQL = N'USE ' + QUOTENAME(@DBINFODatabaseName) + N';
 	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 	INSERT #DBINFO (ParentObject, Object, Field, Value)
 	EXEC (''DBCC DBINFO() With TableResults, NO_INFOMSGS'');
-	UPDATE #DBINFO SET DatabaseName = N''?'' WHERE DatabaseName IS NULL OPTION (RECOMPILE);';
+	UPDATE #DBINFO SET DatabaseName = @DBName WHERE DatabaseName IS NULL OPTION (RECOMPILE);';
+
+	EXEC sys.sp_executesql
+		@SQL
+		, N'@DBName NVARCHAR(128)'
+		, @DBName = @DBINFODatabaseName;
+
+	FETCH NEXT FROM DBINFOCursor INTO @DBINFODatabaseName;
+	END;
+
+CLOSE DBINFOCursor;
+DEALLOCATE DBINFOCursor;
 
 WITH CHECKDB AS (
 	SELECT DISTINCT
@@ -1474,7 +1512,7 @@ SELECT
 	, DatabaseName
 	, 'The database ' + DatabaseName + ' has not had any integrity checks in the last 2 weeks.'
 	, 'Regularly run DBCC CHECKDB to check for integrity issues that could indicate corruption.'
-	, ''		
+	, 'https://straightpathsql.com/check/missing-integrity-checks'		
 FROM CHECKDB
 WHERE DatabaseName <> 'tempdb'
 	AND DatabaseName NOT IN ( SELECT [name] FROM master.sys.databases WHERE is_read_only = 1)
@@ -1506,9 +1544,14 @@ CREATE TABLE #ErrorLog (
     LogMessage NVARCHAR(4000)
 );
 
-/* read current SQL Server error log (0 = current, 1 = error log type) */
-INSERT INTO #ErrorLog
-EXEC sys.xp_readerrorlog 0, 1;
+/* read current SQL Server error log (0 = current, 1 = error log type)
+   only when the current login can execute xp_readerrorlog (EXECUTE is granted
+   to sysadmin by default; VIEW SERVER STATE does not cover it), otherwise skip
+   the I/O freeze check rather than aborting the procedure */
+IF HAS_PERMS_BY_NAME('sys.xp_readerrorlog', 'OBJECT', 'EXECUTE') = 1 BEGIN
+	INSERT INTO #ErrorLog
+	EXEC sys.xp_readerrorlog 0, 1;
+END;
 
 WITH Events AS (
     SELECT
@@ -1563,12 +1606,12 @@ SELECT
     , DatabaseName
     , 'I/O freezes can negatively impact your database performance. These are usually caused by VM backups or other backups that use Volume Shadowcopy Services (VSS).'
     , 'Ensure you understand how VSS backups are used in your environment.'
-    , ''
+    , 'https://straightpathsql.com/check/i-o-freeze'
 FROM Paired
 GROUP BY DatabaseName
 
 	SELECT
-		r.Importance
+		r.[Importance]
 		, r.CheckName
 		, r.Issue
 		, r.DatabaseName
@@ -1581,7 +1624,7 @@ GROUP BY DatabaseName
 		ON r.CategoryID = c.CategoryID
 	WHERE r.CategoryID <> 1
 	ORDER BY
-		r.Importance
+		r.[Importance]
 		, c.CategoryID
 		, r.CheckID
 		, r.Issue

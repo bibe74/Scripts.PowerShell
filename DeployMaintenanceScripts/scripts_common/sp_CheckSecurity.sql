@@ -22,8 +22,8 @@ DECLARE
 	, @VersionDate DATETIME = NULL
 
 SELECT
-    @Version = '2026.6.1'
-    , @VersionDate = '20260612';
+    @Version = '2026.8.2'
+    , @VersionDate = '20260811';
 
 /* Version check */
 IF @VersionCheck = 1 BEGIN
@@ -41,6 +41,8 @@ IF @Help = 1 BEGIN
 	PRINT '
 /*
     sp_CheckSecurity from https://straightpathsql.com/
+
+	Version: ' + @Version + ' updated ' + CONVERT(VARCHAR(10), @VersionDate, 101) + '
     	
     This script checks your SQL Server for several dozen possible vulnerabilities
     and gives you an ordered list with explanations and action items.
@@ -54,11 +56,13 @@ IF @Help = 1 BEGIN
     then you will only receive an output message saying this will not run on your
     version. I''m sorry. No really, I''m sorry you have to support a version of
     SQL Server that old.
-    - sp_CheckSecurity is designed only for database administrators, so the user
-    must be a member of the sysadmin role to complete these checks.
     - If a database name has a question mark in it, then certain checks will fail
     due to the usage of sp_MSforeachdb.
-    
+
+    Permissions:
+    - The executing user must be a member of the sysadmin role; the procedure
+    aborts otherwise.
+
     Parameters:
     @Mode   0=All discovered vulnerabilities
 			1=Only high vulnerability items will be shown
@@ -163,7 +167,7 @@ IF IS_SRVROLEMEMBER ('sysadmin') = 0 BEGIN
 	END; 
 
 DECLARE 
-	@SQL NVARCHAR(4000)
+	@SQL NVARCHAR(MAX)
 	, @SQLVersion NVARCHAR(128)
 	, @SQLVersionMajor DECIMAL(10,2)
 	, @SQLVersionMinor DECIMAL(10,2)
@@ -191,8 +195,7 @@ VALUES
     , (4, 'Availability')
     , (5, 'Integrity')
     , (6, 'Reliability')
-    , (7, 'Performance')
-    , (8, 'Troubleshooting');
+    , (7, 'Performance');
 	
 IF OBJECT_ID('tempdb..#Results') IS NOT NULL
 	DROP TABLE #Results;
@@ -201,7 +204,7 @@ CREATE TABLE #Results (
 	CategoryID TINYINT
 	, CheckID INT
 	, [Importance] TINYINT
-	, CheckName VARCHAR(50)
+	, CheckName VARCHAR(100)
 	, Issue NVARCHAR(MAX)
 	, DatabaseName NVARCHAR(255)
 	, Details NVARCHAR(MAX)
@@ -233,6 +236,7 @@ CREATE TABLE #SQLVersions (
 INSERT #SQLVersions
 VALUES
 	('2008', 10)
+	, ('2008 R2', 10.5)
 	, ('2012', 11)
 	, ('2014', 12)
 	, ('2016', 13)
@@ -484,11 +488,11 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 	IF SERVERPROPERTY('EngineEdition') <> 8 /* Azure Managed Instances */ BEGIN
 		IF ((@SQLVersionMajor = 11 AND @SQLVersionMinor < 7507) OR
 			(@SQLVersionMajor = 12 AND @SQLVersionMinor < 6449) OR
-			(@SQLVersionMajor = 13 AND @SQLVersionMinor < 6490) OR
-			(@SQLVersionMajor = 14 AND @SQLVersionMinor < 3530) OR
-			(@SQLVersionMajor = 15 AND @SQLVersionMinor < 4470) OR
-			(@SQLVersionMajor = 16 AND @SQLVersionMinor < 4255) OR
-			(@SQLVersionMajor = 17 AND @SQLVersionMinor < 4040) )
+			(@SQLVersionMajor = 13 AND @SQLVersionMinor < 6500) OR
+			(@SQLVersionMajor = 14 AND @SQLVersionMinor < 3540) OR
+			(@SQLVersionMajor = 15 AND @SQLVersionMinor < 4480) OR
+			(@SQLVersionMajor = 16 AND @SQLVersionMinor < 4262) OR
+			(@SQLVersionMajor = 17 AND @SQLVersionMinor < 4060) )
 
 		INSERT #Results
 		SELECT 
@@ -512,7 +516,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 		3
 		, 312
 		, 2
-		, 'Encrypted database' 
+		, 'Encrypted databases' 
 		, 'One or more databases are using SQL Server encryption.' 
 		, NULL
 		, 'This instance has ' + CONVERT(VARCHAR(10), COUNT(database_id)) + ' encrypted databases using ' + key_algorithm + ' ' + CONVERT(VARCHAR(5), key_length) + '.'
@@ -530,8 +534,8 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 		3
 		, 312
 		, 2
-		, 'Unencrypted database' 
-		, 'One or more databases are not using SQL Server encryption.' 
+		, 'Encrypted databases' 
+		, 'One or more databases are NOT using SQL Server encryption.' 
 		, NULL
 		, 'This instance has ' + CONVERT(VARCHAR(10), COUNT(database_id)) + ' unencrypted databases.' 
 		, 'Having unencrypted databases isn''t necessarily bad, but make sure you don''t need to have these user databases encrypted.'
@@ -726,7 +730,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 		, NULL
 		, 'The credential [##xp_cmdshell_proxy_account##] exists, which lets logins that are NOT in the sysadmin role run operating system commands via xp_cmdshell using the Windows account [' + credential_identity + ']. '
 		, 'Verify that non-sysadmin OS command execution is intended. If not, remove the proxy.'
-		, 'https://straightpathsql.com/check/xp-cmdshell-proxy-account'
+		, 'https://straightpathsql.com/check/xp_cmdshell'
 	FROM sys.credentials
 	WHERE name = '##xp_cmdshell_proxy_account##';
 
@@ -879,7 +883,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 		, NULL
 		, 'xp_cmdshell allows for the execution of operating system commands in the context of the SQL Server account by members of the sysadmin role.' 
 		, 'If you do not have any code requiring xp_cmdshell, disable this configuration option.'
-		, 'https://straightpathsql.com/check/xp-cmdshell'
+		, 'https://straightpathsql.com/check/xp_cmdshell'
 	FROM master.sys.configurations
 	WHERE [name] = 'xp_cmdshell'
 	AND value_in_use = 1;
@@ -992,7 +996,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 		2
 		, 211
 		, 1
-		, 'TDE certificate never backed up'
+		, 'TDE certificate not backed up recently'
 		, 'There is a certificate used for TDE that has never been backed up.'
 		, db_name(d.database_id)
 		, 'The certificate ' + c.name + ' used to encrypt database ' + db_name(d.database_id) + ' has never been backed up.'
@@ -1007,7 +1011,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 	SELECT 
 		2
 		, 211
-		, 2
+		, 1
 		, 'TDE certificate not backed up recently'
 		, 'There is a certificate used for TDE that has not been backed up recently.'
 		, db_name(d.database_id)
@@ -1227,12 +1231,12 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 		4
 		, 406
 		, 1
-		, 'Endpoints owned by users' 
+		, 'Endpoint owner' 
 		, 'There is an endpoint owned by a user login.'
 		, NULL
 		, 'Endpoint ' + ep.[name] + ' is owned by ' + SUSER_NAME(ep.principal_id) + '. If the endpoint owner login is disabled or not available due to Active Directory problems, then high availability will stop working.'
 		, 'Verify this is the correct owner of this endpoint, and if it is not then assign ownership to sa.'
-		, 'https://straightpathsql.com/check/endpoints-owned-by-users'
+		, 'https://straightpathsql.com/check/endpoint-ownership'
 	FROM sys.database_mirroring_endpoints ep
 	LEFT OUTER JOIN sys.dm_server_services s
 	 ON SUSER_NAME(ep.principal_id) = s.service_account
@@ -1321,7 +1325,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 		3
 		, 329
 		, 1
-		, 'SQL Server service using built-in elevated account'
+		, 'Service using built-in elevated account'
 		, 'The SQL Server service is using a local elevated account.'
 		, NULL
 		, 'The SQL Server service is using an account that allows anyone with access to xp_cmdshell to do anything on the server.'
@@ -1337,7 +1341,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 		3
 		, 329
 		, 1
-		, 'SQL Agent service using built-in elevated account'
+		, 'Service using built-in elevated account'
 		, 'The SQL Agent service is using a local elevated account.'
 		, NULL
 		, 'The SQL Agent service is using an account that allows anyone with access to jobs to do anything on the server.'
@@ -1354,7 +1358,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 		3
 		, 350
 		, 2
-		, 'SQL Server service account in sysadmin'
+		, 'Service account in sysadmin'
 		, 'The SQL Server service is using account [' + service_account + '], which is in the sysadmin role.'
 		, NULL
 		, 'The SQL Server service has permissions to do anything on the server. This could result in privilege escalation via a stored procedure or job.'
@@ -1369,7 +1373,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 		3
 		, 350
 		, 2
-		, 'SQL Agent service account in sysadmin'
+		, 'Service account in sysadmin'
 		, 'The SQL Agent service is using account [' + service_account + '], which is in the sysadmin role.'
 		, NULL
 		, 'The SQL Agent service has permissions to do anything on the server. This could result in privilege escalation via a stored procedure or job.'
@@ -1449,7 +1453,7 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 			6
 			, 622
 			, 2
-			, 'Too few SQL Server error log files'
+			, 'Number of error logs'
 			, 'Error log retention is at the default value of 6 archive files.'
 			, NULL
 			, 'This instance is configured for only ' + CONVERT(VARCHAR(10), (ISNULL(@NumErrorLogs, -1))) + ' SQL Server error log files.'
@@ -1714,19 +1718,77 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 		AND IS_SRVROLEMEMBER ('sysadmin', SUSER_SNAME(owner_sid)) = 0;
 
 
-	/* db_owner role member */
-	SET @SQL = 'USE [?]; 
-	SELECT 3, 333, 2
-	, ''db_owner role member''
-	, ''db_owner role member''
-	, DB_NAME()
-	, (''In ['' + DB_NAME() + ''], user ['' + u.name + '']  has the role ['' + g.name + ''].  This user can perform any function in this database including changing permissions for other users.'')
-	, ''Verify these elevated database permissions are required for this user.''
-	, ''https://straightpathsql.com/check/db_owner-role-members''
-	FROM (SELECT memberuid = convert(int, member_principal_id), groupuid = convert(int, role_principal_id) FROM [?].sys.database_role_members) m inner join [?].dbo.sysusers u on m.memberuid = u.uid inner join sysusers g on m.groupuid = g.uid where u.name <> ''dbo'' and g.name in (''db_owner'') OPTION (RECOMPILE);';
+	/*
+	Build one filtered list of databases for the per-database checks below.
+	Only online, non-snapshot databases are included. Each check switches
+	context with QUOTENAME instead of sp_MSforeachdb, which does an unquoted
+	? substitution.
+	*/
+	IF OBJECT_ID('tempdb..#DatabaseList') IS NOT NULL
+		DROP TABLE #DatabaseList;
 
-	INSERT #Results
-	EXEC sp_MSforeachdb @SQL
+	CREATE TABLE #DatabaseList (
+		DatabaseID INT
+		, DatabaseName sysname
+		);
+
+	INSERT #DatabaseList (DatabaseID, DatabaseName)
+	SELECT
+		database_id
+		, [name]
+	FROM master.sys.databases
+	WHERE state = 0 /* online */
+		AND source_database_id IS NULL; /* exclude snapshot databases */
+
+	/*
+	Remove non-readable availability group secondaries from the list. Entering
+	one with USE raises error 976, which would abort the per-database cursors
+	below. This mirrors the exclusion the public role cursor already applies.
+	The availability group catalog views only exist on SQL Server 2012 and later,
+	so guard on HADR being enabled (deferred name resolution keeps the procedure
+	valid where the views are absent).
+	*/
+	IF SERVERPROPERTY('IsHadrEnabled') = 1
+		DELETE #DatabaseList
+		WHERE DatabaseName IN (
+			SELECT adc.database_name
+			FROM sys.availability_replicas AS ar
+			INNER JOIN sys.availability_databases_cluster adc
+				ON adc.group_id = ar.group_id
+			WHERE ar.secondary_role_allow_connections = 0
+				AND ar.replica_server_name = @@SERVERNAME
+				AND sys.fn_hadr_is_primary_replica(adc.database_name) = 0
+			);
+
+	DECLARE @CurrentDBName VARCHAR(256);
+
+
+	/* db_owner role member */
+	DECLARE DbOwnerRoleCursor CURSOR LOCAL FAST_FORWARD FOR
+		SELECT DatabaseName FROM #DatabaseList;
+
+	OPEN DbOwnerRoleCursor;
+	FETCH NEXT FROM DbOwnerRoleCursor INTO @CurrentDBName;
+
+	WHILE @@FETCH_STATUS = 0 BEGIN
+		SET @SQL = 'USE ' + QUOTENAME(@CurrentDBName) + ';
+		SELECT 3, 333, 2
+		, ''db_owner role member''
+		, ''db_owner role member''
+		, DB_NAME()
+		, (''In ['' + DB_NAME() + ''], user ['' + u.name + '']  has the role ['' + g.name + ''].  This user can perform any function in this database including changing permissions for other users.'')
+		, ''Verify these elevated database permissions are required for this user.''
+		, ''https://straightpathsql.com/check/db_owner-role-members''
+		FROM (SELECT memberuid = convert(int, member_principal_id), groupuid = convert(int, role_principal_id) FROM ' + QUOTENAME(@CurrentDBName) + '.sys.database_role_members) m inner join ' + QUOTENAME(@CurrentDBName) + '.dbo.sysusers u on m.memberuid = u.uid inner join sysusers g on m.groupuid = g.uid where u.name <> ''dbo'' and g.name in (''db_owner'') OPTION (RECOMPILE);';
+
+		INSERT #Results
+		EXECUTE sp_executesql @SQL;
+
+		FETCH NEXT FROM DbOwnerRoleCursor INTO @CurrentDBName;
+		END;
+
+	CLOSE DbOwnerRoleCursor;
+	DEALLOCATE DbOwnerRoleCursor;
 
 	UPDATE #Results
 	SET
@@ -1739,18 +1801,31 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 
 
 	/* unusual database permissions */
-	SET @SQL = 'USE [?]; 
-	SELECT 3, 335, 2
-	, ''Unusual database permissions''
-	, ''Unusual database permissions''
-	, DB_NAME()
-	, (''In ['' + DB_NAME() + ''], user ['' + u.name + '']  has the role ['' + g.name + ''].  This is an unusual database role with elevated permissions, but it is redundant if this user is also in the db_owner role.'')
-	, ''Verify these elevated database permissions are required for this user.''
-	, ''https://straightpathsql.com/check/unusual-database-permissions''
-	FROM (SELECT memberuid = convert(int, member_principal_id), groupuid = convert(int, role_principal_id) FROM [?].sys.database_role_members) m inner join [?].dbo.sysusers u on m.memberuid = u.uid inner join sysusers g on m.groupuid = g.uid where u.name <> ''dbo'' and g.name in (''db_accessadmin'' , ''db_securityadmin'' , ''db_ddladmin'') OPTION (RECOMPILE);';
+	DECLARE UnusualPermsCursor CURSOR LOCAL FAST_FORWARD FOR
+		SELECT DatabaseName FROM #DatabaseList;
 
-	INSERT #Results
-	EXEC sp_MSforeachdb @SQL;
+	OPEN UnusualPermsCursor;
+	FETCH NEXT FROM UnusualPermsCursor INTO @CurrentDBName;
+
+	WHILE @@FETCH_STATUS = 0 BEGIN
+		SET @SQL = 'USE ' + QUOTENAME(@CurrentDBName) + ';
+		SELECT 3, 335, 2
+		, ''Unusual database permissions''
+		, ''Unusual database permissions''
+		, DB_NAME()
+		, (''In ['' + DB_NAME() + ''], user ['' + u.name + '']  has the role ['' + g.name + ''].  This is an unusual database role with elevated permissions, but it is redundant if this user is also in the db_owner role.'')
+		, ''Verify these elevated database permissions are required for this user.''
+		, ''https://straightpathsql.com/check/unusual-database-permissions''
+		FROM (SELECT memberuid = convert(int, member_principal_id), groupuid = convert(int, role_principal_id) FROM ' + QUOTENAME(@CurrentDBName) + '.sys.database_role_members) m inner join ' + QUOTENAME(@CurrentDBName) + '.dbo.sysusers u on m.memberuid = u.uid inner join sysusers g on m.groupuid = g.uid where u.name <> ''dbo'' and g.name in (''db_accessadmin'' , ''db_securityadmin'' , ''db_ddladmin'') OPTION (RECOMPILE);';
+
+		INSERT #Results
+		EXECUTE sp_executesql @SQL;
+
+		FETCH NEXT FROM UnusualPermsCursor INTO @CurrentDBName;
+		END;
+
+	CLOSE UnusualPermsCursor;
+	DEALLOCATE UnusualPermsCursor;
 
 	UPDATE #Results
 	SET
@@ -1763,76 +1838,115 @@ IF @Mode IN (0, 1, 99) BEGIN /* Collect issues info */
 
 
 	/* find roles within roles in each database */
-	SET @SQL = '
-	USE [?]
-	IF DB_Name() NOT IN (''tempdb'') BEGIN
-	SELECT 3, 337, 3
-	, ''Roles within roles''
-	, ''Roles within roles''
-	, db_name() as [DatabaseName]
-	, ''The role ['' + user_name(roles.member_principal_id) + ''] is a member of the role ['' + user_name(roles.role_principal_id)
-	 + '']. Including roles in other roles can lead to unintended privilege escalation.''
-	, ''Remove ['' + user_name(roles.member_principal_id) + ''] from the role ['' + user_name(roles.role_principal_id) + ''] and explicitly assign it required permissions''
-	, ''https://straightpathsql.com/check/database-roles-within-roles''
-	FROM sys.database_role_members AS roles, sys.database_principals users
-	WHERE roles.member_principal_id = users.principal_id
-	AND user_name(roles.member_principal_id) <> ''RSExecRole''
-	AND ( roles.role_principal_id >= 16384 AND roles.role_principal_id <= 16393)
-	AND users.type = ''R''
-	END'
+	DECLARE RolesInRolesCursor CURSOR LOCAL FAST_FORWARD FOR
+		SELECT DatabaseName FROM #DatabaseList;
 
-	INSERT #Results
-	EXEC sp_MSforeachdb @SQL;
+	OPEN RolesInRolesCursor;
+	FETCH NEXT FROM RolesInRolesCursor INTO @CurrentDBName;
+
+	WHILE @@FETCH_STATUS = 0 BEGIN
+		SET @SQL = '
+		USE ' + QUOTENAME(@CurrentDBName) + '
+		IF DB_Name() NOT IN (''tempdb'') BEGIN
+		SELECT 3, 337, 3
+		, ''Roles within roles''
+		, ''Roles within roles''
+		, db_name() as [DatabaseName]
+		, ''The role ['' + user_name(roles.member_principal_id) + ''] is a member of the role ['' + user_name(roles.role_principal_id)
+		 + '']. Including roles in other roles can lead to unintended privilege escalation.''
+		, ''Remove ['' + user_name(roles.member_principal_id) + ''] from the role ['' + user_name(roles.role_principal_id) + ''] and explicitly assign it required permissions''
+		, ''https://straightpathsql.com/check/database-roles-within-roles''
+		FROM sys.database_role_members AS roles, sys.database_principals users
+		WHERE roles.member_principal_id = users.principal_id
+		AND user_name(roles.member_principal_id) <> ''RSExecRole''
+		AND ( roles.role_principal_id >= 16384 AND roles.role_principal_id <= 16393)
+		AND users.type = ''R''
+		END';
+
+		INSERT #Results
+		EXECUTE sp_executesql @SQL;
+
+		FETCH NEXT FROM RolesInRolesCursor INTO @CurrentDBName;
+		END;
+
+	CLOSE RolesInRolesCursor;
+	DEALLOCATE RolesInRolesCursor;
 
 
 	/* find orphan user in each database */
-	SET @SQL = '
-	USE [?]
-	IF DB_Name() NOT IN (''tempdb'') BEGIN
-	SELECT 3, 338, 3
-	, ''Orphaned database user''
-	, ''Orphaned database user''
-	, db_name() as [DatabaseName]
-	, ''The database user ['' + [NAME] + ''] is orphaned, meaning it has no corresponding login at the instance level.''
-	, ''Reconnect the user to an existing login using sp_change_users_login, or drop the user.''
-	, ''https://straightpathsql.com/check/orphaned-users''
-	FROM sys.database_principals
-	WHERE sid NOT IN (SELECT sid FROM sys.server_principals)
-	AND type = ''S''
-	AND principal_id != 2
-	AND DATALENGTH(sid) <= 28'
-	+ CASE 
-		WHEN @SQLVersionMajor >= 12 THEN ' AND authentication_type_desc = ''INSTANCE'''
-		END
-	+ ' END';
+	DECLARE OrphanUserCursor CURSOR LOCAL FAST_FORWARD FOR
+		SELECT DatabaseName FROM #DatabaseList;
 
-	INSERT #Results
-	EXEC sp_MSforeachdb @SQL;
+	OPEN OrphanUserCursor;
+	FETCH NEXT FROM OrphanUserCursor INTO @CurrentDBName;
+
+	WHILE @@FETCH_STATUS = 0 BEGIN
+		SET @SQL = '
+		USE ' + QUOTENAME(@CurrentDBName) + '
+		IF DB_Name() NOT IN (''tempdb'') BEGIN
+		SELECT 3, 338, 3
+		, ''Orphaned database user''
+		, ''Orphaned database user''
+		, db_name() as [DatabaseName]
+		, ''The database user ['' + [NAME] + ''] is orphaned, meaning it has no corresponding login at the instance level.''
+		, ''Reconnect the user to an existing login using sp_change_users_login, or drop the user.''
+		, ''https://straightpathsql.com/check/orphaned-users''
+		FROM sys.database_principals
+		WHERE sid NOT IN (SELECT sid FROM sys.server_principals)
+		AND type = ''S''
+		AND principal_id != 2
+		AND DATALENGTH(sid) <= 28'
+		+ CASE
+			WHEN @SQLVersionMajor >= 12 THEN ' AND authentication_type_desc = ''INSTANCE'''
+			END
+		+ ' END';
+
+		INSERT #Results
+		EXECUTE sp_executesql @SQL;
+
+		FETCH NEXT FROM OrphanUserCursor INTO @CurrentDBName;
+		END;
+
+	CLOSE OrphanUserCursor;
+	DEALLOCATE OrphanUserCursor;
 
 
 	/* database owner is different from owner in master */ -- has issues with mismatched collation
-	SET @SQL = '
-	USE [?]
-	IF DB_Name() NOT IN (''tempdb'') BEGIN
-	SELECT 3, 306, 3
-	, ''Database owner discrepancy''
-	, ''Database owner discrepancy''
-	, db_name() as [DatabaseName]
-	, ''The database owner ['' + dbprs.name COLLATE SQL_Latin1_General_CP1_CI_AS + ''] is different than the owner listed in master ['' + ssp.name COLLATE SQL_Latin1_General_CP1_CI_AS + ''].''
-	, ''Use ALTER AUTHORIZATION ON DATABASE to set the database owner to the correct login.''
-	, ''https://straightpathsql.com/check/database-owner-is-unknown''
-	FROM   sys.database_principals AS dbprs
-	INNER JOIN sys.databases AS dbs
-	 ON dbprs.sid != dbs.owner_sid 
-	JOIN sys.server_principals ssp
-	 ON dbs.owner_sid = ssp.sid 
-	WHERE dbs.database_id = Db_id()
-	AND dbprs.principal_id = 1
-	AND dbs.state_desc = ''ONLINE''
-	END';
+	DECLARE OwnerDiscrepancyCursor CURSOR LOCAL FAST_FORWARD FOR
+		SELECT DatabaseName FROM #DatabaseList;
 
-	INSERT #Results
-	EXEC sp_MSforeachdb @SQL;
+	OPEN OwnerDiscrepancyCursor;
+	FETCH NEXT FROM OwnerDiscrepancyCursor INTO @CurrentDBName;
+
+	WHILE @@FETCH_STATUS = 0 BEGIN
+		SET @SQL = '
+		USE ' + QUOTENAME(@CurrentDBName) + '
+		IF DB_Name() NOT IN (''tempdb'') BEGIN
+		SELECT 3, 306, 3
+		, ''Database owner discrepancy''
+		, ''Database owner discrepancy''
+		, db_name() as [DatabaseName]
+		, ''The database owner ['' + dbprs.name COLLATE SQL_Latin1_General_CP1_CI_AS + ''] is different than the owner listed in master ['' + ssp.name COLLATE SQL_Latin1_General_CP1_CI_AS + ''].''
+		, ''Use ALTER AUTHORIZATION ON DATABASE to set the database owner to the correct login.''
+		, ''https://straightpathsql.com/check/database-owner-is-unknown''
+		FROM   sys.database_principals AS dbprs
+		INNER JOIN sys.databases AS dbs
+		 ON dbprs.sid != dbs.owner_sid
+		JOIN sys.server_principals ssp
+		 ON dbs.owner_sid = ssp.sid
+		WHERE dbs.database_id = Db_id()
+		AND dbprs.principal_id = 1
+		AND dbs.state_desc = ''ONLINE''
+		END';
+
+		INSERT #Results
+		EXECUTE sp_executesql @SQL;
+
+		FETCH NEXT FROM OwnerDiscrepancyCursor INTO @CurrentDBName;
+		END;
+
+	CLOSE OwnerDiscrepancyCursor;
+	DEALLOCATE OwnerDiscrepancyCursor;
 
 
 	/* explicit permissions granted to the Public role */

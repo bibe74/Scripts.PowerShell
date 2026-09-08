@@ -3,7 +3,7 @@ IF OBJECT_ID('dbo.sp_CheckTempdb') IS NULL
 GO
 
 
-ALTER PROCEDURE [dbo].[sp_CheckTempdb]
+ALTER PROCEDURE dbo.sp_CheckTempdb
     @Mode TINYINT = 99 
 	, @Size CHAR(2) = 'MB'
     , @UsagePercent TINYINT = 50
@@ -23,8 +23,8 @@ DECLARE
 	, @VersionDate DATETIME = NULL
 
 SELECT
-    @Version = '2026.6.1'
-    , @VersionDate = '20260612';
+    @Version = '2026.8.1'
+    , @VersionDate = '20260806';
 
 /* Version check */
 IF @VersionCheck = 1 BEGIN
@@ -42,7 +42,7 @@ IF @Help = 1 BEGIN
 /*
     sp_CheckTempdb from https://straightpathsql.com/
 
-	Version: ' + @Version + ', updated ' + CONVERT(VARCHAR(10), @VersionDate, 101) + '
+	Version: ' + @Version + ' updated ' + CONVERT(VARCHAR(10), @VersionDate, 101) + '
     
     This stored procedure checks your SQL Server tempdb database for issues and 
     provides a list of findings with action items, or if you prefer, allows you 
@@ -54,7 +54,10 @@ IF @Help = 1 BEGIN
     - sp_CheckTempdb will work with some earlier versions of SQL Server, but it 
     will skip a few checks. The results should still be valid and helpful, but you
     should really consider upgrading to a newer version.
-    
+
+    Permissions:
+    - VIEW SERVER STATE and VIEW ANY DEFINITION are required.
+
     Parameters:
 
     @Mode  0=Show only problematic issues, unfiltered
@@ -118,7 +121,7 @@ IF @Help = 1 BEGIN
 
 /* SQL Server version check */	
 DECLARE 
-	@SQL NVARCHAR(4000)
+	@SQL NVARCHAR(MAX)
 	, @SQLVersion NVARCHAR(128)
 	, @SQLVersionMajor DECIMAL(10,2)
 	, @SQLVersionMinor DECIMAL(10,2)
@@ -161,18 +164,20 @@ CREATE TABLE #SQLVersions (
 INSERT #SQLVersions
 VALUES
 	('2008', 10)
+	, ('2008 R2', 10.5)
 	, ('2012', 11)
 	, ('2014', 12)
 	, ('2016', 13)
 	, ('2017', 14)
 	, ('2019', 15)
-	, ('2022', 16);
+	, ('2022', 16)
+	, ('2025', 17);
 
 /* SQL Server version */
 SELECT @SQLVersion = CAST(SERVERPROPERTY('ProductVersion') AS NVARCHAR(128));
 
 SELECT 
-	@SQLVersionMajor = CONVERT(DECIMAL(10,2), LEFT(@SQLVersion, CHARINDEX('.', @SQLVersion) - 1))
+	@SQLVersionMajor = SUBSTRING(@SQLVersion, 1,CHARINDEX('.', @SQLVersion) + 1 )
 	, @SQLVersionMinor = PARSENAME(CONVERT(VARCHAR(32), @SQLVersion), 2);
 
 
@@ -211,8 +216,7 @@ VALUES
     , (4, 'Availability')
     , (5, 'Integrity')
     , (6, 'Reliability')
-    , (7, 'Performance')
-    , (8, 'Troubleshooting');
+    , (7, 'Performance');
     
 IF OBJECT_ID('tempdb..#Results') IS NOT NULL
 	DROP TABLE #Results;
@@ -221,7 +225,7 @@ CREATE TABLE #Results (
     CategoryID TINYINT
 	, CheckID INT
     , [Importance] TINYINT
-	, CheckName VARCHAR(50)
+	, CheckName VARCHAR(100)
 	, Issue NVARCHAR(MAX)
 	, DatabaseName NVARCHAR(255)
 	, Details NVARCHAR(MAX)
@@ -625,7 +629,7 @@ IF (
     INSERT #Results
     SELECT
         3
-        , 351
+        , 356
         , 3
 		, 'tempdb encrypted'
         , 'The tempdb database is currently encrypted.'
@@ -723,7 +727,7 @@ IF (
     			, 'tempdb'
     			, 'Microsoft recommends having the same number of data files as CPU cores (up to 8) to reduce file contention.'
     			, 'Configure tempdb to have ' + CONVERT(VARCHAR(3), @NumberOfCPUCores) + ' evenly sized data files.'
-    			, 'https://straightpathsql.com/check/tempdb-data-file-count'
+    			, 'https://straightpathsql.com/check/tempdb-data-file-growth'
             WHERE @NumberOfDataFiles <> @NumberOfCPUCores;
     
     IF @NumberOfCPUCores >= 8 AND @SQLEngine <> 'Azure SQL Managed Instance'  /* Excluding Azure MI since it defaults to 12 data files */
@@ -738,7 +742,7 @@ IF (
     			, 'tempdb'
     			, 'Microsoft recommends having the same number of data files as CPU cores (up to 8) to reduce file contention.'
     			, 'If this configuration was not intentional, configure tempdb to have 8 evenly sized data files.'
-    			, 'https://straightpathsql.com/check/tempdb-data-file-count'
+    			, 'https://straightpathsql.com/check/tempdb-data-file-growth'
             WHERE @NumberOfDataFiles <> 8;
 
 /* number of data files exceeds Microsoft recommendations */
@@ -754,7 +758,7 @@ IF (
     			, 'tempdb'
     			, 'Microsoft recommends not having more than 16 data files.'
     			, 'If this configuration was not intentional, configure tempdb to have 16 or fewer evenly sized data files.'
-    			, 'https://straightpathsql.com/check/tempdb-data-file-count';
+    			, 'https://straightpathsql.com/check/tempdb-data-file-growth';
 
 /* Unevenly sized data files */
 	IF (
@@ -1035,7 +1039,7 @@ IF @SQLVersionMajor >= 17 BEGIN
     SET @SQL = N'
     SELECT
         7
-        , 739
+        , 741
         , 2
         , ''Accelerated Database Recovery''
         , ''The tempdb database has Accelerated Database Recovery (ADR) enabled.''
@@ -1054,7 +1058,7 @@ IF @SQLVersionMajor >= 17 BEGIN
 
 /* Return Results */	
 	SELECT
-		r.Importance
+		r.[Importance]
 		, r.CheckName
 		, r.Issue
 		, r.DatabaseName
@@ -1067,7 +1071,7 @@ IF @SQLVersionMajor >= 17 BEGIN
 		ON r.CategoryID = c.CategoryID
 	WHERE r.CategoryID <> 1
 	ORDER BY
-		r.Importance
+		r.[Importance]
 		, c.CategoryID
 		, r.CheckID
 		, r.Issue
