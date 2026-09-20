@@ -25,8 +25,6 @@ Copy-Item $Source -Destination $ScriptsDirectory
 
 $ScriptsDirectory = $ScriptDirectoryBase + "\\scripts_common\\"
 
-$Source = $ScriptSourceDirectoryBase + "sp_Check\\sp_CheckBackup\\sp_CheckBackup.sql"
-Copy-Item $Source -Destination $ScriptsDirectory
 $Source = $ScriptSourceDirectoryBase + "sp_Check\\sp_CheckSecurity\\sp_CheckSecurity.sql"
 Copy-Item $Source -Destination $ScriptsDirectory
 $Source = $ScriptSourceDirectoryBase + "sp_Check\\sp_CheckTempdb\\sp_CheckTempdb.sql"
