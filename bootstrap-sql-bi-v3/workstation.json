@@ -158,6 +158,36 @@
 			"Requires": [
 				"PowerShell"
 			]
+		},
+		"DBeaver": {
+			"Provider": "Winget",
+			"Id": "DBeaver.DBeaver.Community",
+			"Optional": true
+		},
+		"GoogleCloudSDK": {
+			"Provider": "Winget",
+			"Id": "Google.CloudSDK",
+			"Optional": true
+		},
+		"JavaRuntimeEnvironment": {
+			"Provider": "Winget",
+			"Id": "Oracle.JavaRuntimeEnvironment",
+			"Optional": true
+		},
+		"MariaDB": {
+			"Provider": "Winget",
+			"Id": "MariaDB.Server",
+			"Optional": true
+		},
+		"RemoteDesktopManager": {
+			"Provider": "Winget",
+			"Id": "Devolutions.RemoteDesktopManager",
+			"Optional": true
+		},
+		"Slack": {
+			"Provider": "Winget",
+			"Id": "SlackTechnologies.Slack",
+			"Optional": true
 		}
 	},
 	"Groups": {
@@ -171,7 +201,8 @@
 			"SSMS",
 			"SqlCmd",
 			"SqlPackage",
-			"AzureCLI"
+			"AzureCLI",
+			"DBeaver"
 		],
 		"Containers": [
 			"WSL",
@@ -199,6 +230,13 @@
 			"SqlServerModule",
 			"DbatoolsModule",
 			"PoshGitModule"
+		],
+		"Extras" : [
+			"GoogleCloudSDK",
+			"JavaRuntimeEnvironment",
+			"MariaDB",
+			"RemoteDesktopManager",
+			"Slack"
 		]
 	},
 	"Profiles": {
@@ -228,7 +266,8 @@
 			"VSCodeSql",
 			"VisualStudio2026",
 			"LegacyBiml",
-			"PowerShellModules"
+			"PowerShellModules",
+			"Extras"
 		]
 	}
 }
