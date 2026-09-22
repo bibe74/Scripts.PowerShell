@@ -1,0 +1,234 @@
+{
+	"Programs": {
+		"Terminal": {
+			"Provider": "Winget",
+			"Id": "Microsoft.WindowsTerminal"
+		},
+		"PowerShell": {
+			"Provider": "Winget",
+			"Id": "Microsoft.PowerShell"
+		},
+		"Git": {
+			"Provider": "Winget",
+			"Id": "Git.Git"
+		},
+		"VSCode": {
+			"Provider": "Winget",
+			"Id": "Microsoft.VisualStudioCode"
+		},
+		"SSMS": {
+			"Provider": "Winget",
+			"Id": "Microsoft.SQLServerManagementStudio",
+			"Optional": true
+		},
+		"SqlCmd": {
+			"Provider": "Winget",
+			"Id": "Microsoft.Sqlcmd",
+			"Optional": true
+		},
+		"SqlPackage": {
+			"Provider": "Winget",
+			"Id": "Microsoft.SqlPackage",
+			"Optional": true
+		},
+		"AzureCLI": {
+			"Provider": "Winget",
+			"Id": "Microsoft.AzureCLI",
+			"Optional": true
+		},
+		"Docker": {
+			"Provider": "Winget",
+			"Id": "Docker.DockerDesktop"
+		},
+		"WSL": {
+			"Provider": "PowerShell",
+			"Command": "wsl --install --no-distribution; wsl --set-default-version 2; wsl --update",
+			"Admin": true
+		},
+		"Ubuntu": {
+			"Provider": "PowerShell",
+			"Command": "wsl --install -d Ubuntu",
+			"Admin": true,
+			"Requires": [
+				"WSL"
+			]
+		},
+		"Debian": {
+			"Provider": "PowerShell",
+			"Command": "wsl --install -d Debian",
+			"Admin": true,
+			"Requires": [
+				"WSL"
+			]
+		},
+		"VS2026": {
+			"Provider": "VisualStudio",
+			"Id": "Microsoft.VisualStudio.2026.Community",
+			"Add": [
+				"Microsoft.VisualStudio.Workload.Data"
+			],
+			"IncludeRecommended": true
+		},
+		"VS2019": {
+			"Provider": "Manual",
+			"Description": "Installa l'edizione VS 2019 desiderata dalla Release History Microsoft; poi sostituisci questa voce con VisualStudio quando avrai fissato bootstrapper/edizione legacy."
+		},
+		"SSAS2026": {
+			"Provider": "Manual",
+			"Description": "Installa Analysis Services Projects dall'Extension Manager/Marketplace per la versione di Visual Studio scelta.",
+			"Requires": [
+				"VS2026"
+			]
+		},
+		"SSIS2026": {
+			"Provider": "Manual",
+			"Description": "Installa Integration Services Projects dall'Extension Manager/Marketplace per la versione di Visual Studio scelta.",
+			"Requires": [
+				"VS2026"
+			]
+		},
+		"SSRS2026": {
+			"Provider": "Manual",
+			"Description": "Installa Reporting Services Projects dall'Extension Manager/Marketplace se necessario.",
+			"Requires": [
+				"VS2026"
+			],
+			"Optional": true
+		},
+		"BimlExpress": {
+			"Provider": "VSIX",
+			"Path": ".\\packages\\BimlExpress.vsix",
+			"Requires": [
+				"VS2019"
+			],
+			"Optional": true
+		},
+		"MSSQL": {
+			"Provider": "VSCodeExtension",
+			"Id": "ms-mssql.mssql",
+			"Requires": [
+				"VSCode"
+			]
+		},
+		"SqlProjects": {
+			"Provider": "VSCodeExtension",
+			"Id": "ms-mssql.sql-database-projects-vscode",
+			"Requires": [
+				"VSCode"
+			]
+		},
+		"VSCodePS": {
+			"Provider": "VSCodeExtension",
+			"Id": "ms-vscode.powershell",
+			"Requires": [
+				"VSCode"
+			]
+		},
+		"VSCodeDocker": {
+			"Provider": "VSCodeExtension",
+			"Id": "ms-azuretools.vscode-docker",
+			"Requires": [
+				"VSCode"
+			]
+		},
+		"VSCodeWSL": {
+			"Provider": "VSCodeExtension",
+			"Id": "ms-vscode-remote.remote-wsl",
+			"Requires": [
+				"VSCode"
+			]
+		},
+		"SqlServerModule": {
+			"Provider": "PSModule",
+			"Id": "SqlServer",
+			"Requires": [
+				"PowerShell"
+			]
+		},
+		"DbatoolsModule": {
+			"Provider": "PSModule",
+			"Id": "dbatools",
+			"Requires": [
+				"PowerShell"
+			]
+		},
+		"PoshGitModule": {
+			"Provider": "PSModule",
+			"Id": "posh-git",
+			"Requires": [
+				"PowerShell"
+			]
+		}
+	},
+	"Groups": {
+		"Base": [
+			"Terminal",
+			"PowerShell",
+			"Git",
+			"VSCode"
+		],
+		"SqlTools": [
+			"SSMS",
+			"SqlCmd",
+			"SqlPackage",
+			"AzureCLI"
+		],
+		"Containers": [
+			"WSL",
+			"Debian",
+			"Docker"
+		],
+		"VSCodeSql": [
+			"MSSQL",
+			"SqlProjects",
+			"VSCodePS",
+			"VSCodeDocker",
+			"VSCodeWSL"
+		],
+		"VisualStudio2026": [
+			"VS2026",
+			"SSAS2026",
+			"SSIS2026",
+			"SSRS2026"
+		],
+		"LegacyBiml": [
+			"VS2019",
+			"BimlExpress"
+		],
+		"PowerShellModules": [
+			"SqlServerModule",
+			"DbatoolsModule",
+			"PoshGitModule"
+		]
+	},
+	"Profiles": {
+		"SqlDeveloper": [
+			"Base",
+			"SqlTools",
+			"AzureCLI",
+			"VSCodeSql"
+		],
+		"SqlBiDeveloper": [
+			"Base",
+			"SqlTools",
+			"AzureCLI",
+			"VSCodeSql",
+			"VisualStudio2026"
+		],
+		"LegacySqlBi": [
+			"Base",
+			"SqlTools",
+			"LegacyBiml"
+		],
+		"Full": [
+			"Base",
+			"SqlTools",
+			"AzureCLI",
+			"Containers",
+			"VSCodeSql",
+			"VisualStudio2026",
+			"LegacyBiml",
+			"PowerShellModules"
+		]
+	}
+}
