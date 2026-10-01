@@ -31,11 +31,12 @@
     },
     "powerbi": {
       "label": "Power BI Desktop",
-      "path": "C:\\Users\\{username}\\AppData\\Local\\Microsoft\\WindowsApps\\PBIDesktopStore.exe"
+      //"path": "C:\\Users\\{username}\\AppData\\Local\\Microsoft\\WindowsApps\\PBIDesktopStore.exe"
+      "path": "C:\\Program Files\\WindowsApps\\Microsoft.MicrosoftPowerBIDesktop_2.158.1177.0_x64__8wekyb3d8bbwe\\bin\\PBIDesktop.exe"
     },
     "chrome": {
       "label": "Google Chrome",
-      "path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+    "path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
     },
     "datagrip": {
       "label": "DataGrip",
@@ -62,6 +63,11 @@
           "app": "visualstudio2019",
           "label": "Visual Studio 2019 – Cesi Multimedia",
           "extraArgs": [ "C:\\Work.Git\\Cesi Multimedia\\Cesi\\Business Intelligence\\CesiBI.sln" ]
+        },
+        {
+          "app": "visualstudio",
+          "label": "Visual Studio – Cesi Multimedia",
+          "extraArgs": [ "C:\\Work.Git\\Cesi Multimedia\\Cesi\\Business Intelligence\\CesiDW_Cubi_dev\\CesiDW_Cubi_dev.dwproj" ]
         }
       ]
     },

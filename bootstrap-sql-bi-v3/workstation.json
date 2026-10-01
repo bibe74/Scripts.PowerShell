@@ -188,6 +188,11 @@
 			"Provider": "Winget",
 			"Id": "SlackTechnologies.Slack",
 			"Optional": true
+		},
+		"Zed": {
+			"Provider": "Winget",
+			"Id": "ZedIndustries.Zed",
+			"Optional": true
 		}
 	},
 	"Groups": {
@@ -195,7 +200,8 @@
 			"Terminal",
 			"PowerShell",
 			"Git",
-			"VSCode"
+			"VSCode",
+			"Zed"
 		],
 		"SqlTools": [
 			"SSMS",
