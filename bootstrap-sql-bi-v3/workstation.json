@@ -12,23 +12,27 @@
 			"Provider": "Winget",
 			"Id": "Git.Git"
 		},
+		"PoshGitModule": {
+			"Provider": "PSModule",
+			"Id": "posh-git",
+			"Requires": [
+				"PowerShell"
+			]
+		},
 		"VSCode": {
 			"Provider": "Winget",
 			"Id": "Microsoft.VisualStudioCode"
 		},
-		"SSMS": {
-			"Provider": "Winget",
-			"Id": "Microsoft.SQLServerManagementStudio",
-			"Optional": true
+		"VSCodePS": {
+			"Provider": "VSCodeExtension",
+			"Id": "ms-vscode.powershell",
+			"Requires": [
+				"VSCode"
+			]
 		},
-		"SqlCmd": {
+		"Zed": {
 			"Provider": "Winget",
-			"Id": "Microsoft.Sqlcmd",
-			"Optional": true
-		},
-		"SqlPackage": {
-			"Provider": "Winget",
-			"Id": "Microsoft.SqlPackage",
+			"Id": "ZedIndustries.Zed",
 			"Optional": true
 		},
 		"AzureCLI": {
@@ -36,9 +40,15 @@
 			"Id": "Microsoft.AzureCLI",
 			"Optional": true
 		},
-		"Docker": {
+		"GoogleCloudSDK": {
 			"Provider": "Winget",
-			"Id": "Docker.DockerDesktop"
+			"Id": "Google.CloudSDK",
+			"Optional": true
+		},
+		"NodeJS": {
+			"Provider": "Winget",
+			"Id": "OpenJS.NodeJS",
+			"Optional": true
 		},
 		"WSL": {
 			"Provider": "PowerShell",
@@ -61,6 +71,87 @@
 				"WSL"
 			]
 		},
+		"VSCodeWSL": {
+			"Provider": "VSCodeExtension",
+			"Id": "ms-vscode-remote.remote-wsl",
+			"Requires": [
+				"VSCode"
+			]
+		},
+		"Docker": {
+			"Provider": "Winget",
+			"Id": "Docker.DockerDesktop"
+		},
+		"VSCodeDocker": {
+			"Provider": "VSCodeExtension",
+			"Id": "ms-azuretools.vscode-docker",
+			"Requires": [
+				"VSCode"
+			]
+		},
+		"SSMS": {
+			"Provider": "Manual",
+			"Description": "Installa l'edizione più recente di SQL Server Management Studio da https://learn.microsoft.com/ssms/install/install."
+		},
+		"SqlCmd": {
+			"Provider": "Winget",
+			"Id": "Microsoft.Sqlcmd",
+			"Optional": true
+		},
+		"SqlPackage": {
+			"Provider": "Winget",
+			"Id": "Microsoft.SqlPackage",
+			"Optional": true
+		},
+		"MSSQL": {
+			"Provider": "VSCodeExtension",
+			"Id": "ms-mssql.mssql",
+			"Requires": [
+				"VSCode"
+			]
+		},
+		"SqlProjects": {
+			"Provider": "VSCodeExtension",
+			"Id": "ms-mssql.sql-database-projects-vscode",
+			"Requires": [
+				"VSCode"
+			]
+		},
+		"SqlServerModule": {
+			"Provider": "PSModule",
+			"Id": "SqlServer",
+			"Requires": [
+				"PowerShell"
+			]
+		},
+		"DbatoolsModule": {
+			"Provider": "PSModule",
+			"Id": "dbatools",
+			"Requires": [
+				"PowerShell"
+			]
+		},
+		"MariaDB": {
+			"Provider": "Manual",
+			"Description": "Installa l'edizione più recente di MariaDB da https://downloads.mariadb.org/."
+		},
+		"DBeaver": {
+			"Provider": "Winget",
+			"Id": "DBeaver.DBeaver.Community",
+			"Optional": true
+		},
+		"VS2019": {
+			"Provider": "Manual",
+			"Description": "Installa l'edizione VS 2019 desiderata dalla Release History Microsoft; poi sostituisci questa voce con VisualStudio quando avrai fissato bootstrapper/edizione legacy."
+		},
+		"BimlExpress": {
+			"Provider": "VSIX",
+			"Path": ".\\packages\\BimlExpress.vsix",
+			"Requires": [
+				"VS2019"
+			],
+			"Optional": true
+		},
 		"VS2026": {
 			"Provider": "VisualStudio",
 			"Id": "Microsoft.VisualStudio.2026.Community",
@@ -68,10 +159,6 @@
 				"Microsoft.VisualStudio.Workload.Data"
 			],
 			"IncludeRecommended": true
-		},
-		"VS2019": {
-			"Provider": "Manual",
-			"Description": "Installa l'edizione VS 2019 desiderata dalla Release History Microsoft; poi sostituisci questa voce con VisualStudio quando avrai fissato bootstrapper/edizione legacy."
 		},
 		"SSAS2026": {
 			"Provider": "Manual",
@@ -95,184 +182,92 @@
 			],
 			"Optional": true
 		},
-		"BimlExpress": {
-			"Provider": "VSIX",
-			"Path": ".\\packages\\BimlExpress.vsix",
-			"Requires": [
-				"VS2019"
-			],
-			"Optional": true
-		},
-		"MSSQL": {
-			"Provider": "VSCodeExtension",
-			"Id": "ms-mssql.mssql",
-			"Requires": [
-				"VSCode"
-			]
-		},
-		"SqlProjects": {
-			"Provider": "VSCodeExtension",
-			"Id": "ms-mssql.sql-database-projects-vscode",
-			"Requires": [
-				"VSCode"
-			]
-		},
-		"VSCodePS": {
-			"Provider": "VSCodeExtension",
-			"Id": "ms-vscode.powershell",
-			"Requires": [
-				"VSCode"
-			]
-		},
-		"VSCodeDocker": {
-			"Provider": "VSCodeExtension",
-			"Id": "ms-azuretools.vscode-docker",
-			"Requires": [
-				"VSCode"
-			]
-		},
-		"VSCodeWSL": {
-			"Provider": "VSCodeExtension",
-			"Id": "ms-vscode-remote.remote-wsl",
-			"Requires": [
-				"VSCode"
-			]
-		},
-		"SqlServerModule": {
-			"Provider": "PSModule",
-			"Id": "SqlServer",
-			"Requires": [
-				"PowerShell"
-			]
-		},
-		"DbatoolsModule": {
-			"Provider": "PSModule",
-			"Id": "dbatools",
-			"Requires": [
-				"PowerShell"
-			]
-		},
-		"PoshGitModule": {
-			"Provider": "PSModule",
-			"Id": "posh-git",
-			"Requires": [
-				"PowerShell"
-			]
-		},
-		"DBeaver": {
-			"Provider": "Winget",
-			"Id": "DBeaver.DBeaver.Community",
-			"Optional": true
-		},
-		"GoogleCloudSDK": {
-			"Provider": "Winget",
-			"Id": "Google.CloudSDK",
-			"Optional": true
-		},
 		"JavaRuntimeEnvironment": {
 			"Provider": "Winget",
 			"Id": "Oracle.JavaRuntimeEnvironment",
 			"Optional": true
 		},
-		"MariaDB": {
-			"Provider": "Winget",
-			"Id": "MariaDB.Server",
-			"Optional": true
-		},
 		"RemoteDesktopManager": {
 			"Provider": "Winget",
-			"Id": "Devolutions.RemoteDesktopManager",
-			"Optional": true
+			"Id": "Devolutions.RemoteDesktopManager"
 		},
 		"Slack": {
 			"Provider": "Winget",
-			"Id": "SlackTechnologies.Slack",
-			"Optional": true
-		},
-		"Zed": {
-			"Provider": "Winget",
-			"Id": "ZedIndustries.Zed",
-			"Optional": true
+			"Id": "SlackTechnologies.Slack"
 		}
 	},
 	"Groups": {
-		"Base": [
+		"Development": [
 			"Terminal",
 			"PowerShell",
 			"Git",
+			"PoshGitModule",
 			"VSCode",
-			"Zed"
-		],
-		"SqlTools": [
-			"SSMS",
-			"SqlCmd",
-			"SqlPackage",
+			"VSCodePS",
+			"Zed",
 			"AzureCLI",
-			"DBeaver"
+			"GoogleCloudSDK",
+			"NodeJS"
 		],
 		"Containers": [
 			"WSL",
+			"Ubuntu",
 			"Debian",
-			"Docker"
+			"VSCodeWSL",
+			"Docker",
+			"VSCodeDocker"
 		],
-		"VSCodeSql": [
+		"SQLDevelopment": [
+			"SSMS",
+			"SqlCmd",
+			"SqlPackage",
 			"MSSQL",
 			"SqlProjects",
-			"VSCodePS",
-			"VSCodeDocker",
-			"VSCodeWSL"
-		],
-		"VisualStudio2026": [
-			"VS2026",
-			"SSAS2026",
-			"SSIS2026",
-			"SSRS2026"
+			"SqlServerModule",
+			"DbatoolsModule",
+			"MariaDB",
+			"DBeaver"
 		],
 		"LegacyBiml": [
 			"VS2019",
 			"BimlExpress"
 		],
-		"PowerShellModules": [
-			"SqlServerModule",
-			"DbatoolsModule",
-			"PoshGitModule"
+		"VisualStudio": [
+			"VS2026",
+			"SSAS2026",
+			"SSIS2026",
+			"SSRS2026"
 		],
-		"Extras" : [
-			"GoogleCloudSDK",
+		"Extras": [
 			"JavaRuntimeEnvironment",
-			"MariaDB",
 			"RemoteDesktopManager",
 			"Slack"
 		]
 	},
 	"Profiles": {
+		"Developer" : [
+			"Development",
+			"Containers",
+			"VisualStudio"
+		],
 		"SqlDeveloper": [
-			"Base",
-			"SqlTools",
-			"AzureCLI",
-			"VSCodeSql"
+			"Development",
+			"Containers",
+			"SQLDevelopment"
 		],
 		"SqlBiDeveloper": [
-			"Base",
-			"SqlTools",
-			"AzureCLI",
-			"VSCodeSql",
-			"VisualStudio2026"
-		],
-		"LegacySqlBi": [
-			"Base",
-			"SqlTools",
-			"LegacyBiml"
+			"Development",
+			"Containers",
+			"SQLDevelopment",
+			"LegacyBiml",
+			"VisualStudio"
 		],
 		"Full": [
-			"Base",
-			"SqlTools",
-			"AzureCLI",
+			"Development",
 			"Containers",
-			"VSCodeSql",
-			"VisualStudio2026",
+			"SQLDevelopment",
 			"LegacyBiml",
-			"PowerShellModules",
+			"VisualStudio",
 			"Extras"
 		]
 	}

@@ -31,8 +31,7 @@
     },
     "powerbi": {
       "label": "Power BI Desktop",
-      //"path": "C:\\Users\\{username}\\AppData\\Local\\Microsoft\\WindowsApps\\PBIDesktopStore.exe"
-      "path": "C:\\Program Files\\WindowsApps\\Microsoft.MicrosoftPowerBIDesktop_2.158.1177.0_x64__8wekyb3d8bbwe\\bin\\PBIDesktop.exe"
+      "path": "C:\\Program Files\\WindowsApps\\Microsoft.MicrosoftPowerBIDesktop_2.158.1304.0_x64__8wekyb3d8bbwe\\bin\\PBIDesktop.exe"
     },
     "chrome": {
       "label": "Google Chrome",
